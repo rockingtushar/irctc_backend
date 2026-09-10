@@ -24,14 +24,8 @@ app.add_middleware(
 
 # CORS
 ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
+    "https://irctc-peach.vercel.app/",
     
-    # Agar AI Studio ya cloud preview use kar rahe hain:
-    "https://ais-dev-5gpq3jcrotmbvpgl4z2lkd-679389769019.asia-east1.run.app",
-    "https://ais-pre-5gpq3jcrotmbvpgl4z2lkd-679389769019.asia-east1.run.app",
     
     
 ]
