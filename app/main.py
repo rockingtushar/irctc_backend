@@ -3,7 +3,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from app.routers.stations import router as stations_router
 from app.routers.trains import (router as trains_router,start_cleanup_task,stop_cleanup_task,)
-    
+from sqlalchemy import text
+from app.database import engine
     
     
 
@@ -67,6 +68,17 @@ async def root():
 
 @app.get("/health")
 async def health():
-    return {
-        "status": "ok"
-    }
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+
+        return {
+            "status": "ok",
+            "database": "connected"
+        }
+
+    except Exception:
+        return {
+            "status": "ok",
+            "database": "warming"
+        }
