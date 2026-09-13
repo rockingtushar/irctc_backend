@@ -25,7 +25,7 @@ app.add_middleware(
 
 # CORS
 ALLOWED_ORIGINS = [
-    "https://irctc-peach.vercel.app",
+    "https://irctc-inky.vercel.app",
     
     
     
