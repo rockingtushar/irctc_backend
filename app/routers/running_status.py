@@ -100,6 +100,27 @@ async def running_status_debug():
             "error": repr(exc),
         }
 
+    try:
+        async with httpx.AsyncClient(
+            follow_redirects=True,
+            timeout=30.0,
+        ) as client:
+            response = await client.get(
+                "https://www.irctc.co.in/"
+            )
+    
+            result["irctc_homepage"] = {
+                "success": True,
+                "status": response.status_code,
+                "url": str(response.url),
+                "length": len(response.text),
+            }
+    except Exception as exc:
+        result["irctc_homepage"] = {
+            "success": False,
+            "error": repr(exc),
+        }
+
     # 3. NTES using hostname
     try:
         async with httpx.AsyncClient(
