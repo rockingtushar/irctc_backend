@@ -117,6 +117,7 @@ ALLOWED_ORIGINS = [
     "http://127.0.0.1:3000",
     "https://irctc-peach.vercel.app",
     "https://irctc-inky.vercel.app",
+    "https://irctc-woad.vercel.app",
 ]
 
 app.add_middleware(
