@@ -1,5 +1,6 @@
 from typing import Any
-
+import socket
+import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
@@ -63,3 +64,60 @@ async def running_status(
                 "train running status."
             ),
         ) from exc
+
+
+
+@router.get("/running-status-debug")
+async def running_status_debug():
+    result = {}
+
+    # DNS test
+    try:
+        ip = socket.gethostbyname("enquiry.indianrail.gov.in")
+        result["dns"] = {
+            "success": True,
+            "ip": ip,
+        }
+    except Exception as exc:
+        result["dns"] = {
+            "success": False,
+            "error": repr(exc),
+        }
+
+    # General internet test
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.get("https://www.google.com")
+            result["google"] = {
+                "success": True,
+                "status": response.status_code,
+            }
+    except Exception as exc:
+        result["google"] = {
+            "success": False,
+            "error": repr(exc),
+        }
+
+    # NTES test
+    try:
+        async with httpx.AsyncClient(
+            follow_redirects=True,
+            timeout=30.0,
+        ) as client:
+            response = await client.get(
+                "https://enquiry.indianrail.gov.in/mntes/"
+            )
+
+            result["ntes"] = {
+                "success": True,
+                "status": response.status_code,
+                "url": str(response.url),
+            }
+
+    except Exception as exc:
+        result["ntes"] = {
+            "success": False,
+            "error": repr(exc),
+        }
+
+    return result
