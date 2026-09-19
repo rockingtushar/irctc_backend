@@ -84,11 +84,18 @@ async def initialize_ntes_session(client: httpx.AsyncClient) -> None:
         response = await client.get(
             NTES_HOME_URL,
             headers=ntes_headers(),
-            timeout=20.0,
+            timeout=60.0,
         )
+
+        print("NTES INIT STATUS:", response.status_code)
+        print("NTES INIT URL:", response.url)
+        print("NTES INIT LENGTH:", len(response.text))
+
         response.raise_for_status()
-    except httpx.HTTPError as exc:
+
+    except Exception as exc:
         print("NTES INIT ERROR:", repr(exc))
+
         raise NTESRunningError(
             "Unable to initialize NTES session."
         ) from exc
