@@ -71,7 +71,7 @@ async def running_status(
 async def running_status_debug():
     result = {}
 
-    # DNS test
+    # 1. DNS
     try:
         ip = socket.gethostbyname("enquiry.indianrail.gov.in")
         result["dns"] = {
@@ -84,21 +84,23 @@ async def running_status_debug():
             "error": repr(exc),
         }
 
-    # General internet test
+    # 2. Google - general outbound HTTPS
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
             response = await client.get("https://www.google.com")
+
             result["google"] = {
                 "success": True,
                 "status": response.status_code,
             }
+
     except Exception as exc:
         result["google"] = {
             "success": False,
             "error": repr(exc),
         }
 
-    # NTES test
+    # 3. NTES using hostname
     try:
         async with httpx.AsyncClient(
             follow_redirects=True,
@@ -108,14 +110,40 @@ async def running_status_debug():
                 "https://enquiry.indianrail.gov.in/mntes/"
             )
 
-            result["ntes"] = {
+            result["ntes_hostname"] = {
                 "success": True,
                 "status": response.status_code,
                 "url": str(response.url),
             }
 
     except Exception as exc:
-        result["ntes"] = {
+        result["ntes_hostname"] = {
+            "success": False,
+            "error": repr(exc),
+        }
+
+    # 4. NTES using direct IP
+    try:
+        async with httpx.AsyncClient(
+            follow_redirects=True,
+            timeout=30.0,
+            verify=False,
+        ) as client:
+            response = await client.get(
+                "https://103.110.246.84/mntes/",
+                headers={
+                    "Host": "enquiry.indianrail.gov.in",
+                },
+            )
+
+            result["ntes_ip"] = {
+                "success": True,
+                "status": response.status_code,
+                "url": str(response.url),
+            }
+
+    except Exception as exc:
+        result["ntes_ip"] = {
             "success": False,
             "error": repr(exc),
         }
