@@ -197,8 +197,8 @@ async def irctc_post(
     try:
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(
-                connect=10.0,
-                read=30.0,
+                connect=15.0,
+                read=120.0,
                 write=30.0,
                 pool=10.0,
             ),
