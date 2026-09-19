@@ -212,6 +212,9 @@ async def irctc_post(
             )
 
     except httpx.RequestError as exc:
+        print("CHART IRCTC REQUEST ERROR:", repr(exc))
+        print("CHART IRCTC URL:", url)
+        print("CHART IRCTC PAYLOAD:", payload)
         raise HTTPException(
             status_code=502,
             detail=f"IRCTC request failed: {str(exc)}",
