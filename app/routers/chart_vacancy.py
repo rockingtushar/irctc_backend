@@ -833,6 +833,12 @@ class IRCTCBrowser:
                     "--disable-dev-shm-usage",
                     "--disable-gpu",
                     "--disable-software-rasterizer",
+                    # IRCTC HTTP/2 workaround
+                    "--disable-http2",
+                    "--disable-quic",
+            
+                    # Network stability
+                    "--disable-features=UseDnsHttpsSvcb",
                 ],
             )
         )
@@ -886,7 +892,7 @@ class IRCTCBrowser:
 
             await self.page.goto(
                 IRCTC_PAGE_URL,
-                wait_until="domcontentloaded",
+                wait_until="commit",
                 timeout=60000,
             )
 
