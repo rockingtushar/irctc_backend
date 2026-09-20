@@ -220,6 +220,11 @@ async def irctc_post(
             detail=f"IRCTC request failed: {str(exc)}",
         )
 
+    print("CHART IRCTC STATUS:", response.status_code)
+    print("CHART IRCTC HEADERS:", dict(response.headers))
+    print("CHART IRCTC BODY:", response.text[:2000])
+
+
     if response.status_code != 200:
         raise HTTPException(
             status_code=502,
