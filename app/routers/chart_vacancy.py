@@ -741,11 +741,13 @@
 #         },
 #     }
 import os
+import asyncio
+import json
 
 # ============================================================
 # PLAYWRIGHT BROWSER PATH
 # ============================================================
-# Must match the Render Build Command.
+
 os.environ.setdefault(
     "PLAYWRIGHT_BROWSERS_PATH",
     "/opt/render/project/src/.playwright",
@@ -753,16 +755,14 @@ os.environ.setdefault(
 
 from datetime import date
 from typing import Any, Optional
-import asyncio
-import json
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
+
 from playwright.async_api import (
     async_playwright,
     Browser,
     BrowserContext,
-    Page,
     Playwright,
 )
 
@@ -785,8 +785,12 @@ COACH_COMPOSITION_URL = (
     "https://www.irctc.co.in/online-charts/api/coachComposition"
 )
 
-IRCTC_PAGE_URL = (
+IRCTC_REFERER = (
     "https://www.irctc.co.in/online-charts/"
+)
+
+IRCTC_ORIGIN = (
+    "https://www.irctc.co.in"
 )
 
 
@@ -797,10 +801,18 @@ IRCTC_PAGE_URL = (
 class IRCTCBrowser:
 
     def __init__(self):
-        self.playwright: Optional[Playwright] = None
-        self.browser: Optional[Browser] = None
-        self.context: Optional[BrowserContext] = None
-        self.page: Optional[Page] = None
+
+        self.playwright: Optional[
+            Playwright
+        ] = None
+
+        self.browser: Optional[
+            Browser
+        ] = None
+
+        self.context: Optional[
+            BrowserContext
+        ] = None
 
         self.lock = asyncio.Lock()
 
@@ -817,7 +829,7 @@ class IRCTCBrowser:
         )
 
         print(
-            "CHART: Starting Playwright Chromium..."
+            "CHART: Starting Playwright..."
         )
 
         self.playwright = (
@@ -833,11 +845,12 @@ class IRCTCBrowser:
                     "--disable-dev-shm-usage",
                     "--disable-gpu",
                     "--disable-software-rasterizer",
-                    # IRCTC HTTP/2 workaround
+
+                    # HTTP/2 / QUIC workaround
                     "--disable-http2",
                     "--disable-quic",
-            
-                    # Network stability
+
+                    # DNS / network workaround
                     "--disable-features=UseDnsHttpsSvcb",
                 ],
             )
@@ -862,44 +875,9 @@ class IRCTCBrowser:
             )
         )
 
-        self.page = (
-            await self.context.new_page()
-        )
-
         print(
             "CHART: Browser context created"
         )
-
-    async def ensure_page(self):
-
-        await self.start()
-
-        if self.page is None:
-            raise RuntimeError(
-                "Playwright page is not available"
-            )
-
-        current_url = self.page.url or ""
-
-        if (
-            "irctc.co.in/online-charts"
-            not in current_url
-        ):
-
-            print(
-                "CHART: Opening IRCTC Online Charts..."
-            )
-
-            await self.page.goto(
-                IRCTC_PAGE_URL,
-                wait_until="commit",
-                timeout=60000,
-            )
-
-            print(
-                "CHART: IRCTC page loaded:",
-                self.page.url,
-            )
 
     async def post(
         self,
@@ -909,121 +887,102 @@ class IRCTCBrowser:
 
         async with self.lock:
 
-            await self.ensure_page()
+            await self.start()
 
-            if self.page is None:
+            if self.context is None:
                 raise RuntimeError(
-                    "Playwright page is not available"
+                    "Playwright browser context "
+                    "is not available"
                 )
 
             print(
-                "CHART: Browser POST URL:",
+                "CHART: Browser API request:",
                 url,
             )
 
             print(
-                "CHART: Browser POST PAYLOAD:",
+                "CHART: Browser API payload:",
                 payload,
             )
 
-            result = await self.page.evaluate(
-                """
-                async ({ url, payload }) => {
+            try:
 
-                    try {
+                response = (
+                    await self.context.request.post(
+                        url,
+                        data=payload,
+                        headers={
+                            "Accept": (
+                                "application/json"
+                            ),
 
-                        const response = await fetch(
-                            url,
-                            {
-                                method: "POST",
+                            "Content-Type": (
+                                "application/json"
+                            ),
 
-                                headers: {
-                                    "Accept": "application/json",
-                                    "Content-Type": "application/json",
-                                    "Origin": "https://www.irctc.co.in",
-                                    "Referer": "https://www.irctc.co.in/online-charts/"
-                                },
+                            "Origin":
+                                IRCTC_ORIGIN,
 
-                                body: JSON.stringify(payload)
-                            }
-                        );
+                            "Referer":
+                                IRCTC_REFERER,
+                        },
 
-                        const text =
-                            await response.text();
-
-                        return {
-                            ok: true,
-                            status: response.status,
-                            text: text
-                        };
-
-                    } catch (error) {
-
-                        return {
-                            ok: false,
-                            status: 0,
-                            text: "",
-                            error: String(error)
-                        };
-                    }
-                }
-                """,
-                {
-                    "url": url,
-                    "payload": payload,
-                },
-            )
-
-            print(
-                "CHART: IRCTC browser status:",
-                result.get("status"),
-            )
-
-            if not result.get("ok"):
-
-                error_message = result.get(
-                    "error",
-                    "Unknown browser fetch error",
+                        timeout=60000,
+                    )
                 )
 
+            except Exception as exc:
+
                 print(
-                    "CHART: Browser fetch error:",
-                    error_message,
+                    "CHART: Playwright API ERROR:",
+                    repr(exc),
                 )
 
                 raise HTTPException(
                     status_code=502,
                     detail=(
                         "IRCTC browser request failed: "
-                        f"{error_message}"
+                        f"{str(exc)}"
                     ),
                 )
 
-            status = result.get(
-                "status"
-            )
-
-            response_text = result.get(
-                "text",
-                "",
-            )
-
             print(
-                "CHART: IRCTC RESPONSE STATUS:",
-                status,
+                "CHART: IRCTC STATUS:",
+                response.status,
             )
 
-            print(
-                "CHART: IRCTC RESPONSE BODY:",
-                response_text[:3000],
-            )
+            try:
 
-            if status != 200:
+                response_text = (
+                    await response.text()
+                )
+
+            except Exception as exc:
+
+                print(
+                    "CHART: Failed reading response:",
+                    repr(exc),
+                )
 
                 raise HTTPException(
                     status_code=502,
                     detail=(
-                        f"IRCTC returned HTTP {status}"
+                        "Failed reading IRCTC response"
+                    ),
+                )
+
+            print(
+                "CHART: IRCTC BODY:",
+                response_text[:3000],
+            )
+
+            if response.status != 200:
+
+                raise HTTPException(
+                    status_code=502,
+                    detail=(
+                        "IRCTC returned HTTP "
+                        f"{response.status}"
                     ),
                 )
 
@@ -1042,7 +1001,10 @@ class IRCTCBrowser:
                     ),
                 )
 
-            if not isinstance(data, dict):
+            if not isinstance(
+                data,
+                dict,
+            ):
 
                 raise HTTPException(
                     status_code=502,
@@ -1063,7 +1025,7 @@ class IRCTCBrowser:
         try:
 
             if self.context is not None:
-                await self.context.close()
+                await self.context.dispose()
 
         except Exception as exc:
 
@@ -1096,13 +1058,12 @@ class IRCTCBrowser:
                 repr(exc),
             )
 
-        self.page = None
         self.context = None
         self.browser = None
         self.playwright = None
 
 
-# Global browser
+# Global browser instance
 irctc_browser = IRCTCBrowser()
 
 
@@ -1207,7 +1168,10 @@ def clean_optional(
     if value is None:
         return None
 
-    if isinstance(value, str):
+    if isinstance(
+        value,
+        str,
+    ):
 
         value = value.strip()
 
@@ -1221,19 +1185,32 @@ def normalize_bool(
     value: Any,
 ) -> bool:
 
-    if isinstance(value, bool):
+    if isinstance(
+        value,
+        bool,
+    ):
         return value
 
-    if isinstance(value, str):
+    if isinstance(
+        value,
+        str,
+    ):
 
-        return value.strip().lower() in {
-            "true",
-            "1",
-            "yes",
-            "y",
-        }
+        return (
+            value.strip().lower()
+            in {
+                "true",
+                "1",
+                "yes",
+                "y",
+            }
+        )
 
-    if isinstance(value, (int, float)):
+    if isinstance(
+        value,
+        (int, float),
+    ):
+
         return value != 0
 
     return False
@@ -1256,12 +1233,13 @@ async def irctc_post(
         )
 
     except HTTPException:
+
         raise
 
     except Exception as exc:
 
         print(
-            "CHART IRCTC BROWSER REQUEST ERROR:",
+            "CHART IRCTC REQUEST ERROR:",
             repr(exc),
         )
 
@@ -1303,26 +1281,38 @@ def calculate_berth_status(
     for segment in segments:
 
         occupancy = normalize_bool(
-            segment.get("occupancy")
+            segment.get(
+                "occupancy"
+            )
         )
 
         normalized_segment = {
 
-            "split_no": segment.get(
-                "split_no"
-            ),
+            "split_no":
+                segment.get(
+                    "split_no"
+                ),
 
-            "from": clean_optional(
-                segment.get("from")
-            ),
+            "from":
+                clean_optional(
+                    segment.get(
+                        "from"
+                    )
+                ),
 
-            "to": clean_optional(
-                segment.get("to")
-            ),
+            "to":
+                clean_optional(
+                    segment.get(
+                        "to"
+                    )
+                ),
 
-            "quota": clean_optional(
-                segment.get("quota")
-            ),
+            "quota":
+                clean_optional(
+                    segment.get(
+                        "quota"
+                    )
+                ),
         }
 
         if occupancy:
@@ -1942,9 +1932,7 @@ async def get_coach_chart(
     # ========================================================
 
     fully_occupied_count = 0
-
     partially_occupied_count = 0
-
     fully_vacant_count = 0
 
     for berth in berths:
