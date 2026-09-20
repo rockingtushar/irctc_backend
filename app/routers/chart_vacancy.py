@@ -740,6 +740,17 @@
 #             "source": "IRCTC Online Charts",
 #         },
 #     }
+import os
+
+# ============================================================
+# PLAYWRIGHT BROWSER PATH
+# ============================================================
+# Must match the Render Build Command.
+os.environ.setdefault(
+    "PLAYWRIGHT_BROWSERS_PATH",
+    "/opt/render/project/src/.playwright",
+)
+
 from datetime import date
 from typing import Any, Optional
 import asyncio
@@ -784,58 +795,76 @@ IRCTC_PAGE_URL = (
 # ============================================================
 
 class IRCTCBrowser:
+
     def __init__(self):
         self.playwright: Optional[Playwright] = None
         self.browser: Optional[Browser] = None
         self.context: Optional[BrowserContext] = None
         self.page: Optional[Page] = None
 
-        # Prevent multiple simultaneous browser requests
         self.lock = asyncio.Lock()
 
     async def start(self):
-        """
-        Start Playwright Chromium once and keep it alive.
-        """
 
         if self.browser is not None:
             return
 
-        print("CHART: Starting Playwright...")
-
-        self.playwright = await async_playwright().start()
-
-        self.browser = await self.playwright.chromium.launch(
-            headless=True,
-            args=[
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-                "--disable-dev-shm-usage",
-                "--disable-gpu",
-            ],
-        )
-
-        self.context = await self.browser.new_context(
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/153.0.0.0 Safari/537.36"
+        print(
+            "CHART: PLAYWRIGHT_BROWSERS_PATH:",
+            os.environ.get(
+                "PLAYWRIGHT_BROWSERS_PATH"
             ),
-            locale="en-GB",
-            viewport={
-                "width": 1366,
-                "height": 768,
-            },
         )
 
-        self.page = await self.context.new_page()
+        print(
+            "CHART: Starting Playwright Chromium..."
+        )
 
-        print("CHART: Playwright Chromium started")
+        self.playwright = (
+            await async_playwright().start()
+        )
+
+        self.browser = (
+            await self.playwright.chromium.launch(
+                headless=True,
+                args=[
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-gpu",
+                    "--disable-software-rasterizer",
+                ],
+            )
+        )
+
+        print(
+            "CHART: Chromium started successfully"
+        )
+
+        self.context = (
+            await self.browser.new_context(
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/153.0.0.0 Safari/537.36"
+                ),
+                locale="en-GB",
+                viewport={
+                    "width": 1366,
+                    "height": 768,
+                },
+            )
+        )
+
+        self.page = (
+            await self.context.new_page()
+        )
+
+        print(
+            "CHART: Browser context created"
+        )
 
     async def ensure_page(self):
-        """
-        Make sure IRCTC Online Charts page is loaded.
-        """
 
         await self.start()
 
@@ -846,8 +875,14 @@ class IRCTCBrowser:
 
         current_url = self.page.url or ""
 
-        if "irctc.co.in/online-charts" not in current_url:
-            print("CHART: Opening IRCTC Online Charts...")
+        if (
+            "irctc.co.in/online-charts"
+            not in current_url
+        ):
+
+            print(
+                "CHART: Opening IRCTC Online Charts..."
+            )
 
             await self.page.goto(
                 IRCTC_PAGE_URL,
@@ -865,13 +900,6 @@ class IRCTCBrowser:
         url: str,
         payload: dict[str, Any],
     ) -> dict[str, Any]:
-        """
-        Send request from inside the real browser page.
-
-        This is important because the direct HTTP request from
-        Render cannot reliably reach IRCTC, while the browser
-        request works in the successful local gateway setup.
-        """
 
         async with self.lock:
 
@@ -882,8 +910,15 @@ class IRCTCBrowser:
                     "Playwright page is not available"
                 )
 
-            print("CHART: Browser POST URL:", url)
-            print("CHART: Browser POST PAYLOAD:", payload)
+            print(
+                "CHART: Browser POST URL:",
+                url,
+            )
+
+            print(
+                "CHART: Browser POST PAYLOAD:",
+                payload,
+            )
 
             result = await self.page.evaluate(
                 """
@@ -907,7 +942,8 @@ class IRCTCBrowser:
                             }
                         );
 
-                        const text = await response.text();
+                        const text =
+                            await response.text();
 
                         return {
                             ok: true,
@@ -938,6 +974,7 @@ class IRCTCBrowser:
             )
 
             if not result.get("ok"):
+
                 error_message = result.get(
                     "error",
                     "Unknown browser fetch error",
@@ -956,18 +993,26 @@ class IRCTCBrowser:
                     ),
                 )
 
-            status = result.get("status")
+            status = result.get(
+                "status"
+            )
+
+            response_text = result.get(
+                "text",
+                "",
+            )
+
+            print(
+                "CHART: IRCTC RESPONSE STATUS:",
+                status,
+            )
+
+            print(
+                "CHART: IRCTC RESPONSE BODY:",
+                response_text[:3000],
+            )
 
             if status != 200:
-                print(
-                    "CHART: IRCTC returned HTTP:",
-                    status,
-                )
-
-                print(
-                    "CHART: IRCTC BODY:",
-                    result.get("text", "")[:3000],
-                )
 
                 raise HTTPException(
                     status_code=502,
@@ -976,62 +1021,70 @@ class IRCTCBrowser:
                     ),
                 )
 
-            response_text = result.get(
-                "text",
-                "",
-            )
-
-            print(
-                "CHART: IRCTC RESPONSE:",
-                response_text[:3000],
-            )
-
             try:
-                data = json.loads(response_text)
+
+                data = json.loads(
+                    response_text
+                )
 
             except json.JSONDecodeError:
+
                 raise HTTPException(
                     status_code=502,
-                    detail="IRCTC returned invalid JSON",
+                    detail=(
+                        "IRCTC returned invalid JSON"
+                    ),
                 )
 
             if not isinstance(data, dict):
+
                 raise HTTPException(
                     status_code=502,
-                    detail="Unexpected IRCTC response format",
+                    detail=(
+                        "Unexpected IRCTC "
+                        "response format"
+                    ),
                 )
 
             return data
 
     async def close(self):
-        """
-        Gracefully close browser during application shutdown.
-        """
 
-        print("CHART: Closing Playwright...")
+        print(
+            "CHART: Closing Playwright..."
+        )
 
         try:
+
             if self.context is not None:
                 await self.context.close()
+
         except Exception as exc:
+
             print(
                 "CHART: Context close error:",
                 repr(exc),
             )
 
         try:
+
             if self.browser is not None:
                 await self.browser.close()
+
         except Exception as exc:
+
             print(
                 "CHART: Browser close error:",
                 repr(exc),
             )
 
         try:
+
             if self.playwright is not None:
                 await self.playwright.stop()
+
         except Exception as exc:
+
             print(
                 "CHART: Playwright stop error:",
                 repr(exc),
@@ -1043,7 +1096,7 @@ class IRCTCBrowser:
         self.playwright = None
 
 
-# Global browser instance
+# Global browser
 irctc_browser = IRCTCBrowser()
 
 
@@ -1052,6 +1105,7 @@ irctc_browser = IRCTCBrowser()
 # ============================================================
 
 class ChartTrainRequest(BaseModel):
+
     train_number: str = Field(
         ...,
         min_length=1,
@@ -1068,6 +1122,7 @@ class ChartTrainRequest(BaseModel):
 
 
 class ChartCoachRequest(BaseModel):
+
     train_number: str = Field(
         ...,
         min_length=1,
@@ -1111,46 +1166,30 @@ class ChartCoachRequest(BaseModel):
 # NORMALIZATION HELPERS
 # ============================================================
 
-def normalize_train_number(value: str) -> str:
-    """
-    Normalize train number.
-
-    Example:
-        " 12560 " -> "12560"
-    """
+def normalize_train_number(
+    value: str,
+) -> str:
 
     return str(value).strip()
 
 
-def normalize_station(value: str) -> str:
-    """
-    Normalize railway station code.
-
-    Example:
-        " ndls " -> "NDLS"
-    """
+def normalize_station(
+    value: str,
+) -> str:
 
     return str(value).strip().upper()
 
 
-def normalize_class(value: str) -> str:
-    """
-    Normalize class code.
-
-    Example:
-        " sl " -> "SL"
-    """
+def normalize_class(
+    value: str,
+) -> str:
 
     return str(value).strip().upper()
 
 
-def normalize_coach(value: str) -> str:
-    """
-    Normalize coach name.
-
-    Example:
-        " s1 " -> "S1"
-    """
+def normalize_coach(
+    value: str,
+) -> str:
 
     return str(value).strip().upper()
 
@@ -1158,9 +1197,6 @@ def normalize_coach(value: str) -> str:
 def clean_optional(
     value: Any,
 ) -> Optional[Any]:
-    """
-    Convert empty string to None.
-    """
 
     if value is None:
         return None
@@ -1175,16 +1211,9 @@ def clean_optional(
     return value
 
 
-def normalize_bool(value: Any) -> bool:
-    """
-    Safely normalize IRCTC boolean-like values.
-
-    Supported:
-        True / False
-        "true" / "false"
-        1 / 0
-        "yes" / "no"
-    """
+def normalize_bool(
+    value: Any,
+) -> bool:
 
     if isinstance(value, bool):
         return value
@@ -1205,21 +1234,13 @@ def normalize_bool(value: Any) -> bool:
 
 
 # ============================================================
-# HTTP / IRCTC HELPER
+# IRCTC POST HELPER
 # ============================================================
 
 async def irctc_post(
     url: str,
     payload: dict[str, Any],
 ) -> dict[str, Any]:
-    """
-    Send an IRCTC POST request through Playwright Chromium.
-
-    Previously this function used httpx directly.
-
-    Now it uses the browser page so that the request originates
-    from the IRCTC-loaded browser context.
-    """
 
     try:
 
@@ -1264,22 +1285,6 @@ async def irctc_post(
 def calculate_berth_status(
     segments: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    """
-    Calculate useful derived status from IRCTC berth segments.
-
-    IMPORTANT:
-    This does NOT change the source occupancy meaning.
-
-    occupancy=True
-        -> occupied for that segment
-
-    occupancy=False
-        -> not occupied for that segment
-
-    We deliberately do NOT call occupancy=False "bookable",
-    because the source response does not establish booking
-    eligibility merely from occupancy.
-    """
 
     occupied_segments: list[
         dict[str, Any]
@@ -1296,13 +1301,19 @@ def calculate_berth_status(
         )
 
         normalized_segment = {
-            "split_no": segment.get("split_no"),
+
+            "split_no": segment.get(
+                "split_no"
+            ),
+
             "from": clean_optional(
                 segment.get("from")
             ),
+
             "to": clean_optional(
                 segment.get("to")
             ),
+
             "quota": clean_optional(
                 segment.get("quota")
             ),
@@ -1320,7 +1331,9 @@ def calculate_berth_status(
                 normalized_segment
             )
 
-    total_segments = len(segments)
+    total_segments = len(
+        segments
+    )
 
     occupied_count = len(
         occupied_segments
@@ -1332,12 +1345,14 @@ def calculate_berth_status(
 
     fully_occupied = (
         total_segments > 0
-        and occupied_count == total_segments
+        and occupied_count
+        == total_segments
     )
 
     fully_vacant = (
         total_segments > 0
-        and vacant_count == total_segments
+        and vacant_count
+        == total_segments
     )
 
     partially_occupied = (
@@ -1347,16 +1362,30 @@ def calculate_berth_status(
     )
 
     return {
-        "occupied_segments": occupied_segments,
-        "vacant_segments": vacant_segments,
 
-        "total_segments": total_segments,
-        "occupied_segment_count": occupied_count,
-        "vacant_segment_count": vacant_count,
+        "occupied_segments":
+            occupied_segments,
 
-        "fully_occupied": fully_occupied,
-        "partially_occupied": partially_occupied,
-        "fully_vacant": fully_vacant,
+        "vacant_segments":
+            vacant_segments,
+
+        "total_segments":
+            total_segments,
+
+        "occupied_segment_count":
+            occupied_count,
+
+        "vacant_segment_count":
+            vacant_count,
+
+        "fully_occupied":
+            fully_occupied,
+
+        "partially_occupied":
+            partially_occupied,
+
+        "fully_vacant":
+            fully_vacant,
     }
 
 
@@ -1368,9 +1397,15 @@ def normalize_berth(
     berth: dict[str, Any],
 ) -> dict[str, Any]:
 
-    raw_segments = berth.get("bsd")
+    raw_segments = berth.get(
+        "bsd"
+    )
 
-    if not isinstance(raw_segments, list):
+    if not isinstance(
+        raw_segments,
+        list,
+    ):
+
         raw_segments = []
 
     normalized_segments: list[
@@ -1379,30 +1414,47 @@ def normalize_berth(
 
     for segment in raw_segments:
 
-        if not isinstance(segment, dict):
+        if not isinstance(
+            segment,
+            dict,
+        ):
             continue
 
         normalized_segments.append(
             {
-                "split_no": segment.get(
-                    "splitNo"
-                ),
 
-                "from": clean_optional(
-                    segment.get("from")
-                ),
+                "split_no":
+                    segment.get(
+                        "splitNo"
+                    ),
 
-                "to": clean_optional(
-                    segment.get("to")
-                ),
+                "from":
+                    clean_optional(
+                        segment.get(
+                            "from"
+                        )
+                    ),
 
-                "quota": clean_optional(
-                    segment.get("quota")
-                ),
+                "to":
+                    clean_optional(
+                        segment.get(
+                            "to"
+                        )
+                    ),
 
-                "occupancy": normalize_bool(
-                    segment.get("occupancy")
-                ),
+                "quota":
+                    clean_optional(
+                        segment.get(
+                            "quota"
+                        )
+                    ),
+
+                "occupancy":
+                    normalize_bool(
+                        segment.get(
+                            "occupancy"
+                        )
+                    ),
             }
         )
 
@@ -1413,73 +1465,103 @@ def normalize_berth(
     )
 
     return {
-        "berth_no": berth.get(
-            "berthNo"
-        ),
 
-        "berth_code": clean_optional(
-            berth.get("berthCode")
-        ),
+        "berth_no":
+            berth.get(
+                "berthNo"
+            ),
 
-        "cabin_coupe": clean_optional(
-            berth.get("cabinCoupe")
-        ),
+        "berth_code":
+            clean_optional(
+                berth.get(
+                    "berthCode"
+                )
+            ),
 
-        "cabin_coupe_name_no": clean_optional(
-            berth.get("cabinCoupeNameNo")
-        ),
+        "cabin_coupe":
+            clean_optional(
+                berth.get(
+                    "cabinCoupe"
+                )
+            ),
 
-        "from": clean_optional(
-            berth.get("from")
-        ),
+        "cabin_coupe_name_no":
+            clean_optional(
+                berth.get(
+                    "cabinCoupeNameNo"
+                )
+            ),
 
-        "to": clean_optional(
-            berth.get("to")
-        ),
+        "from":
+            clean_optional(
+                berth.get(
+                    "from"
+                )
+            ),
 
-        "quota_count_station": clean_optional(
-            berth.get("quotaCntStn")
-        ),
+        "to":
+            clean_optional(
+                berth.get(
+                    "to"
+                )
+            ),
 
-        "enable": normalize_bool(
-            berth.get("enable")
-        ),
+        "quota_count_station":
+            clean_optional(
+                berth.get(
+                    "quotaCntStn"
+                )
+            ),
 
-        # Original normalized source segments
-        "segments": normalized_segments,
+        "enable":
+            normalize_bool(
+                berth.get(
+                    "enable"
+                )
+            ),
 
-        # Computed fields
-        "occupied_segments": computed_status[
-            "occupied_segments"
-        ],
+        "segments":
+            normalized_segments,
 
-        "vacant_segments": computed_status[
-            "vacant_segments"
-        ],
+        "occupied_segments":
+            computed_status[
+                "occupied_segments"
+            ],
 
-        "total_segments": computed_status[
-            "total_segments"
-        ],
+        "vacant_segments":
+            computed_status[
+                "vacant_segments"
+            ],
 
-        "occupied_segment_count": computed_status[
-            "occupied_segment_count"
-        ],
+        "total_segments":
+            computed_status[
+                "total_segments"
+            ],
 
-        "vacant_segment_count": computed_status[
-            "vacant_segment_count"
-        ],
+        "occupied_segment_count":
+            computed_status[
+                "occupied_segment_count"
+            ],
 
-        "fully_occupied": computed_status[
-            "fully_occupied"
-        ],
+        "vacant_segment_count":
+            computed_status[
+                "vacant_segment_count"
+            ],
 
-        "partially_occupied": computed_status[
-            "partially_occupied"
-        ],
+        "fully_occupied":
+            computed_status[
+                "fully_occupied"
+            ],
 
-        "fully_vacant": computed_status[
-            "fully_vacant"
-        ],
+        "partially_occupied":
+            computed_status[
+                "partially_occupied"
+            ],
+
+        "fully_vacant":
+            computed_status[
+                "fully_vacant"
+            ],
     }
 
 
@@ -1492,12 +1574,16 @@ async def get_train_chart(
     request: ChartTrainRequest,
 ):
 
-    train_number = normalize_train_number(
-        request.train_number
+    train_number = (
+        normalize_train_number(
+            request.train_number
+        )
     )
 
-    boarding_station = normalize_station(
-        request.boarding_station
+    boarding_station = (
+        normalize_station(
+            request.boarding_station
+        )
     )
 
     journey_date = (
@@ -1505,9 +1591,15 @@ async def get_train_chart(
     )
 
     payload = {
-        "trainNo": train_number,
-        "jDate": journey_date,
-        "boardingStation": boarding_station,
+
+        "trainNo":
+            train_number,
+
+        "jDate":
+            journey_date,
+
+        "boardingStation":
+            boarding_station,
     }
 
     response_data = await irctc_post(
@@ -1515,11 +1607,17 @@ async def get_train_chart(
         payload,
     )
 
-    raw_coaches = response_data.get(
-        "cdd"
+    raw_coaches = (
+        response_data.get(
+            "cdd"
+        )
     )
 
-    if not isinstance(raw_coaches, list):
+    if not isinstance(
+        raw_coaches,
+        list,
+    ):
+
         raw_coaches = []
 
     coaches: list[
@@ -1528,26 +1626,38 @@ async def get_train_chart(
 
     for coach in raw_coaches:
 
-        if not isinstance(coach, dict):
+        if not isinstance(
+            coach,
+            dict,
+        ):
             continue
 
         coaches.append(
             {
-                "coach_name": clean_optional(
-                    coach.get("coachName")
-                ),
 
-                "class_code": clean_optional(
-                    coach.get("classCode")
-                ),
+                "coach_name":
+                    clean_optional(
+                        coach.get(
+                            "coachName"
+                        )
+                    ),
 
-                "position_from_engine": coach.get(
-                    "positionFromEngine"
-                ),
+                "class_code":
+                    clean_optional(
+                        coach.get(
+                            "classCode"
+                        )
+                    ),
 
-                "vacant_berths": coach.get(
-                    "vacantBerths"
-                ),
+                "position_from_engine":
+                    coach.get(
+                        "positionFromEngine"
+                    ),
+
+                "vacant_berths":
+                    coach.get(
+                        "vacantBerths"
+                    ),
             }
         )
 
@@ -1565,134 +1675,149 @@ async def get_train_chart(
     ):
 
         chart_status = {
-            "messageIndex": chart_status_raw.get(
-                "messageIndex"
-            ),
 
-            "chartOneFlag": chart_status_raw.get(
-                "chartOneFlag"
-            ),
-
-            "chartTwoFlag": chart_status_raw.get(
-                "chartTwoFlag"
-            ),
-
-            "trainStartDate": clean_optional(
+            "messageIndex":
                 chart_status_raw.get(
-                    "trainStartDate"
-                )
-            ),
+                    "messageIndex"
+                ),
 
-            "remoteStationCode": clean_optional(
+            "chartOneFlag":
                 chart_status_raw.get(
-                    "remoteStationCode"
-                )
-            ),
+                    "chartOneFlag"
+                ),
 
-            "messageType": clean_optional(
+            "chartTwoFlag":
                 chart_status_raw.get(
-                    "messageType"
-                )
-            ),
+                    "chartTwoFlag"
+                ),
+
+            "trainStartDate":
+                clean_optional(
+                    chart_status_raw.get(
+                        "trainStartDate"
+                    )
+                ),
+
+            "remoteStationCode":
+                clean_optional(
+                    chart_status_raw.get(
+                        "remoteStationCode"
+                    )
+                ),
+
+            "messageType":
+                clean_optional(
+                    chart_status_raw.get(
+                        "messageType"
+                    )
+                ),
         }
 
     return {
+
         "success": True,
 
         "data": {
 
-            "train_number": (
+            "train_number":
                 clean_optional(
                     response_data.get(
                         "trainNo"
                     )
-                )
-                or train_number
-            ),
+                ) or train_number,
 
-            "train_name": clean_optional(
-                response_data.get(
-                    "trainName"
-                )
-            ),
+            "train_name":
+                clean_optional(
+                    response_data.get(
+                        "trainName"
+                    )
+                ),
 
-            "from": clean_optional(
-                response_data.get(
-                    "from"
-                )
-            ),
+            "from":
+                clean_optional(
+                    response_data.get(
+                        "from"
+                    )
+                ),
 
-            "to": clean_optional(
-                response_data.get(
-                    "to"
-                )
-            ),
+            "to":
+                clean_optional(
+                    response_data.get(
+                        "to"
+                    )
+                ),
 
-            "train_start_date": clean_optional(
-                response_data.get(
-                    "trainStartDate"
-                )
-            ),
+            "train_start_date":
+                clean_optional(
+                    response_data.get(
+                        "trainStartDate"
+                    )
+                ),
 
-            "remote_location_chart_date": (
+            "remote_location_chart_date":
                 clean_optional(
                     response_data.get(
                         "remoteLocationChartDate"
                     )
-                )
-            ),
+                ),
 
-            "remote": clean_optional(
-                response_data.get(
-                    "remote"
-                )
-            ),
+            "remote":
+                clean_optional(
+                    response_data.get(
+                        "remote"
+                    )
+                ),
 
-            "next_remote": clean_optional(
-                response_data.get(
-                    "nextRemote"
-                )
-            ),
+            "next_remote":
+                clean_optional(
+                    response_data.get(
+                        "nextRemote"
+                    )
+                ),
 
-            "available_remote_for_booking": (
+            "available_remote_for_booking":
                 clean_optional(
                     response_data.get(
                         "avlRemoteForBooking"
                     )
-                )
-            ),
+                ),
 
-            "destination_station": (
+            "destination_station":
                 clean_optional(
                     response_data.get(
                         "destinationStation"
                     )
-                )
-            ),
+                ),
 
-            "chart_one_date": clean_optional(
-                response_data.get(
-                    "chartOneDate"
-                )
-            ),
+            "chart_one_date":
+                clean_optional(
+                    response_data.get(
+                        "chartOneDate"
+                    )
+                ),
 
-            "chart_two_date": clean_optional(
-                response_data.get(
-                    "chartTwoDate"
-                )
-            ),
+            "chart_two_date":
+                clean_optional(
+                    response_data.get(
+                        "chartTwoDate"
+                    )
+                ),
 
-            "chart_status": chart_status,
+            "chart_status":
+                chart_status,
 
-            "error": clean_optional(
-                response_data.get(
-                    "error"
-                )
-            ),
+            "error":
+                clean_optional(
+                    response_data.get(
+                        "error"
+                    )
+                ),
 
-            "coaches": coaches,
+            "coaches":
+                coaches,
 
-            "source": "IRCTC Online Charts",
+            "source":
+                "IRCTC Online Charts",
         },
     }
 
@@ -1706,28 +1831,40 @@ async def get_coach_chart(
     request: ChartCoachRequest,
 ):
 
-    train_number = normalize_train_number(
-        request.train_number
+    train_number = (
+        normalize_train_number(
+            request.train_number
+        )
     )
 
-    boarding_station = normalize_station(
-        request.boarding_station
+    boarding_station = (
+        normalize_station(
+            request.boarding_station
+        )
     )
 
-    remote_station = normalize_station(
-        request.remote_station
+    remote_station = (
+        normalize_station(
+            request.remote_station
+        )
     )
 
-    train_source_station = normalize_station(
-        request.train_source_station
+    train_source_station = (
+        normalize_station(
+            request.train_source_station
+        )
     )
 
-    travel_class = normalize_class(
-        request.travel_class
+    travel_class = (
+        normalize_class(
+            request.travel_class
+        )
     )
 
-    coach = normalize_coach(
-        request.coach
+    coach = (
+        normalize_coach(
+            request.coach
+        )
     )
 
     journey_date = (
@@ -1735,13 +1872,27 @@ async def get_coach_chart(
     )
 
     payload = {
-        "trainNo": train_number,
-        "boardingStation": boarding_station,
-        "remoteStation": remote_station,
-        "trainSourceStation": train_source_station,
-        "cls": travel_class,
-        "coach": coach,
-        "jDate": journey_date,
+
+        "trainNo":
+            train_number,
+
+        "boardingStation":
+            boarding_station,
+
+        "remoteStation":
+            remote_station,
+
+        "trainSourceStation":
+            train_source_station,
+
+        "cls":
+            travel_class,
+
+        "coach":
+            coach,
+
+        "jDate":
+            journey_date,
     }
 
     response_data = await irctc_post(
@@ -1749,11 +1900,17 @@ async def get_coach_chart(
         payload,
     )
 
-    raw_berths = response_data.get(
-        "bdd"
+    raw_berths = (
+        response_data.get(
+            "bdd"
+        )
     )
 
-    if not isinstance(raw_berths, list):
+    if not isinstance(
+        raw_berths,
+        list,
+    ):
+
         raw_berths = []
 
     berths: list[
@@ -1762,11 +1919,16 @@ async def get_coach_chart(
 
     for berth in raw_berths:
 
-        if not isinstance(berth, dict):
+        if not isinstance(
+            berth,
+            dict,
+        ):
             continue
 
         berths.append(
-            normalize_berth(berth)
+            normalize_berth(
+                berth
+            )
         )
 
     # ========================================================
@@ -1774,77 +1936,89 @@ async def get_coach_chart(
     # ========================================================
 
     fully_occupied_count = 0
+
     partially_occupied_count = 0
+
     fully_vacant_count = 0
 
     for berth in berths:
 
-        if berth["fully_occupied"]:
+        if berth[
+            "fully_occupied"
+        ]:
 
             fully_occupied_count += 1
 
-        elif berth["partially_occupied"]:
+        elif berth[
+            "partially_occupied"
+        ]:
 
             partially_occupied_count += 1
 
-        elif berth["fully_vacant"]:
+        elif berth[
+            "fully_vacant"
+        ]:
 
             fully_vacant_count += 1
 
     return {
+
         "success": True,
 
         "data": {
 
-            "train_number": train_number,
+            "train_number":
+                train_number,
 
-            "journey_date": journey_date,
+            "journey_date":
+                journey_date,
 
-            "boarding_station": boarding_station,
+            "boarding_station":
+                boarding_station,
 
-            "remote_station": remote_station,
+            "remote_station":
+                remote_station,
 
-            "train_source_station": (
-                train_source_station
-            ),
+            "train_source_station":
+                train_source_station,
 
-            "class_code": travel_class,
+            "class_code":
+                travel_class,
 
-            "coach": (
+            "coach":
                 clean_optional(
                     response_data.get(
                         "coachName"
                     )
-                )
-                or coach
-            ),
+                ) or coach,
 
-            "error": clean_optional(
-                response_data.get(
-                    "error"
-                )
-            ),
+            "error":
+                clean_optional(
+                    response_data.get(
+                        "error"
+                    )
+                ),
 
-            "berth_count": len(berths),
+            "berth_count":
+                len(berths),
 
             "berth_summary": {
 
-                "fully_occupied": (
-                    fully_occupied_count
-                ),
+                "fully_occupied":
+                    fully_occupied_count,
 
-                "partially_occupied": (
-                    partially_occupied_count
-                ),
+                "partially_occupied":
+                    partially_occupied_count,
 
-                "fully_vacant": (
-                    fully_vacant_count
-                ),
+                "fully_vacant":
+                    fully_vacant_count,
             },
 
-            "berths": berths,
+            "berths":
+                berths,
 
-            "source": "IRCTC Online Charts",
+            "source":
+                "IRCTC Online Charts",
         },
     }
 
@@ -1854,8 +2028,5 @@ async def get_coach_chart(
 # ============================================================
 
 async def close_irctc_browser():
-    """
-    Close Playwright browser when application shuts down.
-    """
 
     await irctc_browser.close()
