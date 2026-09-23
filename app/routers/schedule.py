@@ -1,7 +1,7 @@
 from datetime import datetime
 import time
 
-import httpx
+from curl_cffi import requests as curl_requests
 from fastapi import APIRouter, HTTPException
 
 
@@ -201,9 +201,10 @@ async def get_train_schedule(train_number: str):
         # Create HTTP session
         # ----------------------------------------------------
 
-        async with httpx.AsyncClient(
+        async with curl_requests.AsyncSession(
+            impersonate="chrome",
             timeout=30.0,
-            follow_redirects=True,
+            allow_redirects=True,
             headers=IRCTC_HEADERS,
         ) as client:
 
@@ -282,7 +283,7 @@ async def get_train_schedule(train_number: str):
             # print("=" * 70)
             # print()
 
-    except httpx.RequestError as exc:
+    except Exception as exc:
 
         # print(
             # "IRCTC REQUEST ERROR:",

@@ -914,44 +914,18 @@ async def fetch_train_availability(
         "_": timestamp_ms(),
     }
 
-    print(
-        "\n========== AVAILABILITY REQUEST =========="
-    )
-    print(
-        "TRAIN:",
-        train_number,
-    )
-    print(
-        "CLASS:",
-        class_code,
-    )
-    print(
-        "QUOTA:",
-        quota,
-    )
-    print(
-        "SOURCE:",
-        source_station,
-    )
-    print(
-        "DESTINATION:",
-        destination_station,
-    )
-    print(
-        "TRAIN TYPE:",
-        train_type,
-    )
-    print(
-        "DATE:",
-        formatted_date,
-    )
-    print(
-        "PARAMS:",
-        params,
-    )
-    print(
-        "==========================================\n"
-    )
+    # print(
+    #     "\n========== AVAILABILITY REQUEST =========="
+    # )
+    # print("TRAIN:", train_number)
+    # print("CLASS:", class_code)
+    # print("QUOTA:", quota)
+    # print("SOURCE:", source_station)
+    # print("DESTINATION:", destination_station)
+    # print("TRAIN TYPE:", train_type)
+    # print("DATE:", formatted_date)
+    # print("PARAMS:", params)
+    # print("==========================================\n")
 
     try:
 
@@ -1004,28 +978,12 @@ async def fetch_train_availability(
             },
         }
 
-    print(
-        "\n========== AVAILABILITY RESPONSE =========="
-    )
-    print(
-        "HTTP STATUS:",
-        response.status_code,
-    )
-    print(
-        "TRAIN:",
-        train_number,
-    )
-    print(
-        "CLASS:",
-        class_code,
-    )
-    print(
-        "RESPONSE:",
-        data,
-    )
-    print(
-        "============================================\n"
-    )
+    # print("\n========== AVAILABILITY RESPONSE ==========")
+    # print("HTTP STATUS:", response.status_code)
+    # print("TRAIN:", train_number)
+    # print("CLASS:", class_code)
+    # print("RESPONSE:", data)
+    # print("============================================\n")
 
     # --------------------------------------------------------
     # Upstream station validation
@@ -1261,55 +1219,17 @@ async def search_trains(
         f"{to_station_name} - {to_code}"
     )
 
-    print(
-        "TBIS SOURCE EXACT:",
-        repr(source_station),
-    )
-    
-    print(
-        "TBIS DESTINATION EXACT:",
-        repr(destination_station),
-    )
-    
-    print(
-        "\n========== TBIS STATION DEBUG =========="
-    )
-    
-    print(
-        "FRONTEND FROM NAME:",
-        request.from_name,
-    )
-    
-    print(
-        "FRONTEND FROM CODE:",
-        request.from_code,
-    )
-    
-    print(
-        "TBIS SOURCE:",
-        source_station,
-    )
-    
-    print()
-    
-    print(
-        "FRONTEND TO NAME:",
-        request.to_name,
-    )
-    
-    print(
-        "FRONTEND TO CODE:",
-        request.to_code,
-    )
-    
-    print(
-        "TBIS DESTINATION:",
-        destination_station,
-    )
-    
-    print(
-        "========================================\n"
-    )
+    # print("TBIS SOURCE EXACT:", repr(source_station))
+    # print("TBIS DESTINATION EXACT:", repr(destination_station))
+    # print("\n========== TBIS STATION DEBUG ==========")
+    # print("FRONTEND FROM NAME:", request.from_name)
+    # print("FRONTEND FROM CODE:", request.from_code)
+    # print("TBIS SOURCE:", source_station)
+    # print()
+    # print("FRONTEND TO NAME:", request.to_name)
+    # print("FRONTEND TO CODE:", request.to_code)
+    # print("TBIS DESTINATION:", destination_station)
+    # print("========================================\n")
 
     # --------------------------------------------------------
     # 6. TBIS train search params
@@ -1352,16 +1272,6 @@ async def search_trains(
             detail=(
                 "Indian Railways returned an HTTP "
                 "error while searching trains."
-            ),
-        ) from exc
-
-    except Exception as exc:
-
-        raise HTTPException(
-            status_code=502,
-            detail=(
-                "Unable to connect to Indian Railways "
-                "for train search."
             ),
         ) from exc
 
@@ -1722,17 +1632,15 @@ async def get_train_availability(
             "_": timestamp_ms(),
         }
 
-        print(
-            "\n========== TBIS AVAILABILITY REQUEST =========="
-        )
-        print("TRAIN:", train_number)
-        print("FROM:", from_code)
-        print("TO:", to_code)
-        print("DATE:", formatted_date)
-        print("CLASS:", travel_class)
-        print("QUOTA:", quota)
-        print("TRAIN TYPE:", params["traintype"])
-        print("===============================================\n")
+        # print("\n========== TBIS AVAILABILITY REQUEST ==========")
+        # print("TRAIN:", train_number)
+        # print("FROM:", from_code)
+        # print("TO:", to_code)
+        # print("DATE:", formatted_date)
+        # print("CLASS:", travel_class)
+        # print("QUOTA:", quota)
+        # print("TRAIN TYPE:", params["traintype"])
+        # print("===============================================\n")
 
         # ----------------------------------------------------
         # 10. Call Indian Railways

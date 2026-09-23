@@ -6,7 +6,7 @@ import time
 from datetime import datetime
 from typing import Any
 
-import httpx
+from curl_cffi import requests as curl_requests
 from bs4 import BeautifulSoup
 from bs4.element import Tag
 
@@ -79,29 +79,21 @@ def ntes_headers() -> dict[str, str]:
     }
 
 
-async def initialize_ntes_session(client: httpx.AsyncClient) -> None:
+async def initialize_ntes_session(client: curl_requests.AsyncSession) -> None:
     try:
         response = await client.get(
             NTES_HOME_URL,
             headers=ntes_headers(),
-            timeout=60.0,
+            timeout=20.0,
         )
-
-        print("NTES INIT STATUS:", response.status_code)
-        print("NTES INIT URL:", response.url)
-        print("NTES INIT LENGTH:", len(response.text))
-
         response.raise_for_status()
-
     except Exception as exc:
-        print("NTES INIT ERROR:", repr(exc))
-
         raise NTESRunningError(
             "Unable to initialize NTES session."
         ) from exc
 
 
-async def get_csrf_token(client: httpx.AsyncClient) -> tuple[str, str]:
+async def get_csrf_token(client: curl_requests.AsyncSession) -> tuple[str, str]:
     try:
         response = await client.get(
             f"{NTES_CSRF_URL}?t={timestamp_ms()}",
@@ -109,7 +101,7 @@ async def get_csrf_token(client: httpx.AsyncClient) -> tuple[str, str]:
             timeout=20.0,
         )
         response.raise_for_status()
-    except httpx.HTTPError as exc:
+    except Exception as exc:
         raise NTESRunningError(
             "Unable to fetch NTES CSRF token."
         ) from exc
@@ -1055,7 +1047,7 @@ def extract_coach_position(
     requested_date = str(requested_date).strip()
 
     # print(
-        # f"[NTES DEBUG] requested_date={requested_date}"
+    #     f"[NTES DEBUG] requested_date={requested_date}"
     # )
 
     # ------------------------------------------------------------------
@@ -1073,8 +1065,8 @@ def extract_coach_position(
         cpos_elements.append(element)
 
     # print(
-        # "[NTES DEBUG] total cpos elements="
-        # f"{len(cpos_elements)}"
+    #     "[NTES DEBUG] total cpos elements="
+    #     f"{len(cpos_elements)}"
     # )
 
     if not cpos_elements:
@@ -1097,8 +1089,8 @@ def extract_coach_position(
                 requested_cpos.append(element)
 
     # print(
-        # "[NTES DEBUG] requested-date cpos="
-        # f"{len(requested_cpos)} for {requested_date}"
+    #     "[NTES DEBUG] requested-date cpos="
+    #     f"{len(requested_cpos)} for {requested_date}"
     # )
 
     # If date filtering somehow fails, don't immediately give up.
@@ -1142,8 +1134,8 @@ def extract_coach_position(
         result: list[dict[str, Any]] = []
 
         # print(
-            # "[NTES DEBUG] parsing coach table "
-            # f"rows={len(rows)}"
+        #     "[NTES DEBUG] parsing coach table "
+        #     f"rows={len(rows)}"
         # )
 
         # ==============================================================
@@ -1163,9 +1155,9 @@ def extract_coach_position(
                 continue
 
             # print(
-                # "[NTES DEBUG] "
-                # f"row={row_index} "
-                # f"raw_text={row_text[:1000]}"
+            #     "[NTES DEBUG] "
+            #     f"row={row_index} "
+            #     f"raw_text={row_text[:1000]}"
             # )
 
             # ==========================================================
@@ -1204,8 +1196,8 @@ def extract_coach_position(
             )
 
             # print(
-                # "[NTES DEBUG] coach triple matches="
-                # f"{len(matches)}"
+            #     "[NTES DEBUG] coach triple matches="
+            #     f"{len(matches)}"
             # )
 
             for match in matches:
@@ -1293,8 +1285,8 @@ def extract_coach_position(
         )
 
         # print(
-            # "[NTES DEBUG] parsed coach count="
-            # f"{len(unique_coaches)}"
+        #     "[NTES DEBUG] parsed coach count="
+        #     f"{len(unique_coaches)}"
         # )
 
         return unique_coaches
@@ -1312,9 +1304,9 @@ def extract_coach_position(
         tables = cpos.find_all("table")
 
         # print(
-            # "[NTES DEBUG] checking "
-            # f"cpos={cpos_id} "
-            # f"tables={len(tables)}"
+        #     "[NTES DEBUG] checking "
+        #     f"cpos={cpos_id} "
+        #     f"tables={len(tables)}"
         # )
 
         if not tables:
@@ -1336,22 +1328,20 @@ def extract_coach_position(
             if coaches:
 
                 # print(
-                    # "[NTES DEBUG] COACH TABLE SUCCESS "
-                    # f"cpos={cpos_id} "
-                    # f"table_index={table_index} "
-                    # f"count={len(coaches)}"
+                #     "[NTES DEBUG] COACH TABLE SUCCESS "
+                #     f"cpos={cpos_id} "
+                #     f"table_index={table_index} "
+                #     f"count={len(coaches)}"
                 # )
 
-                for coach in coaches:
-
-                    # print(
-                        # "[NTES DEBUG] "
-                        # f"position={coach.get('position')} "
-                        # f"type={coach.get('coach_type')} "
-                        # f"id={coach.get('coach_id')}"
-                    # )
-
-                    pass
+                # for coach in coaches:
+                #
+                #     print(
+                #         "[NTES DEBUG] "
+                #         f"position={coach.get('position')} "
+                #         f"type={coach.get('coach_type')} "
+                #         f"id={coach.get('coach_id')}"
+                #     )
 
                 return coaches
 
@@ -1362,8 +1352,8 @@ def extract_coach_position(
             if table_index == 0:
 
                 # print(
-                    # "[NTES DEBUG] FIRST COACH TABLE "
-                    # "DID NOT PARSE"
+                #     "[NTES DEBUG] FIRST COACH TABLE "
+                #     "DID NOT PARSE"
                 # )
 
                 raw_rows = table.find_all(
@@ -1371,21 +1361,19 @@ def extract_coach_position(
                 )
 
                 # print(
-                    # "[NTES DEBUG] raw row count="
-                    # f"{len(raw_rows)}"
+                #     "[NTES DEBUG] raw row count="
+                #     f"{len(raw_rows)}"
                 # )
 
-                for row_index, row in enumerate(
-                    raw_rows[:10]
-                ):
-
-                    pass
-
-                    # print(
-                        # "[NTES DEBUG] ROW "
-                        # f"{row_index}: "
-                        # f"{repr(row.get_text(' | ', strip=True))}"
-                    # )
+                # for row_index, row in enumerate(
+                #     raw_rows[:10]
+                # ):
+                #
+                #     print(
+                #         "[NTES DEBUG] ROW "
+                #         f"{row_index}: "
+                #         f"{repr(row.get_text(' | ', strip=True))}"
+                #     )
 
     # ------------------------------------------------------------------
     # STEP 5: Last fallback - search all cpos
@@ -1394,8 +1382,8 @@ def extract_coach_position(
     if candidates != cpos_elements:
 
         # print(
-            # "[NTES DEBUG] requested-date search failed, "
-            # "trying all cpos elements"
+        #     "[NTES DEBUG] requested-date search failed, "
+        #     "trying all cpos elements"
         # )
 
         for cpos in cpos_elements:
@@ -1422,15 +1410,21 @@ def extract_coach_position(
                 if coaches:
 
                     # print(
-                        # "[NTES DEBUG] FALLBACK COACH "
-                        # "TABLE SUCCESS "
-                        # f"cpos={cpos_id} "
-                        # f"table_index={table_index} "
-                        # f"count={len(coaches)}"
+                    #     "[NTES DEBUG] FALLBACK COACH "
+                    #     "TABLE SUCCESS "
+                    #     f"cpos={cpos_id} "
+                    #     f"table_index={table_index} "
+                    #     f"count={len(coaches)}"
                     # )
 
-                    for coach in coaches:
-                        pass
+                    # for coach in coaches:
+                    #
+                    #     print(
+                    #         "[NTES DEBUG] "
+                    #         f"position={coach.get('position')} "
+                    #         f"type={coach.get('coach_type')} "
+                    #         f"id={coach.get('coach_id')}"
+                    #     )
 
                     return coaches
 
@@ -1439,7 +1433,7 @@ def extract_coach_position(
     # ------------------------------------------------------------------
 
     # print(
-        # "[NTES DEBUG] NO VALID COACH TABLE FOUND"
+    #     "[NTES DEBUG] NO VALID COACH TABLE FOUND"
     # )
 
     return []
@@ -1593,15 +1587,15 @@ async def fetch_running_status(
     # print("\n" + "=" * 80)
     # print("[NTES DEBUG] START TRAIN RUNNING")
     # print(
-        # f"[NTES DEBUG] train_number={train_number}"
+    #     f"[NTES DEBUG] train_number={train_number}"
     # )
     # print(
-        # f"[NTES DEBUG] journey_date={journey_date}"
+    #     f"[NTES DEBUG] journey_date={journey_date}"
     # )
     # print("=" * 80)
 
-    async with httpx.AsyncClient(
-        follow_redirects=True,
+    async with curl_requests.AsyncSession(
+        impersonate="chrome",
         headers=ntes_headers(),
     ) as client:
 
@@ -1609,13 +1603,13 @@ async def fetch_running_status(
         # 1. INITIALIZE NTES SESSION
         # -------------------------------------------------
         # print(
-            # "[NTES DEBUG] Initializing NTES session..."
+        #     "[NTES DEBUG] Initializing NTES session..."
         # )
 
         await initialize_ntes_session(client)
 
         # print(
-            # "[NTES DEBUG] NTES session initialized."
+        #     "[NTES DEBUG] NTES session initialized."
         # )
 
         # -------------------------------------------------
@@ -1626,15 +1620,15 @@ async def fetch_running_status(
         )
 
         # print(
-            # "[NTES DEBUG] CSRF received:"
+        #     "[NTES DEBUG] CSRF received:"
         # )
         # print(
-            # f"[NTES DEBUG] csrf_name={csrf_name}"
+        #     f"[NTES DEBUG] csrf_name={csrf_name}"
         # )
         # print(
-            # "[NTES DEBUG] csrf_value="
-            # + str(csrf_value)[:20]
-            # + "..."
+        #     "[NTES DEBUG] csrf_value="
+        #     + str(csrf_value)[:20]
+        #     + "..."
         # )
 
         form_data = {
@@ -1649,14 +1643,14 @@ async def fetch_running_status(
         # -------------------------------------------------
         # print("\n" + "-" * 80)
         # print(
-            # "[NTES DEBUG] STEP 1: FindRunningInstance"
+        #     "[NTES DEBUG] STEP 1: FindRunningInstance"
         # )
         # print(
-            # f"[NTES DEBUG] URL={NTES_RUNNING_URL}"
+        #     f"[NTES DEBUG] URL={NTES_RUNNING_URL}"
         # )
         # print(
-            # f"[NTES DEBUG] form_data="
-            # f"{ {k: v for k, v in form_data.items() if k != csrf_name} }"
+        #     f"[NTES DEBUG] form_data="
+        #     f"{ {k: v for k, v in form_data.items() if k != csrf_name} }"
         # )
 
         try:
@@ -1674,29 +1668,29 @@ async def fetch_running_status(
 
             response.raise_for_status()
 
-        except httpx.HTTPError as exc:
+        except Exception as exc:
             # print(
-                # "[NTES DEBUG] FindRunningInstance FAILED"
+            #     "[NTES DEBUG] FindRunningInstance FAILED"
             # )
             # print(
-                # f"[NTES DEBUG] ERROR={exc}"
+            #     f"[NTES DEBUG] ERROR={exc}"
             # )
             raise NTESRunningError(
                 "NTES train running request failed."
             ) from exc
 
         # print(
-            # "[NTES DEBUG] FindRunningInstance SUCCESS"
+        #     "[NTES DEBUG] FindRunningInstance SUCCESS"
         # )
         # print(
-            # f"[NTES DEBUG] status_code={response.status_code}"
+        #     f"[NTES DEBUG] status_code={response.status_code}"
         # )
         # print(
-            # f"[NTES DEBUG] final_url={response.url}"
+        #     f"[NTES DEBUG] final_url={response.url}"
         # )
         # print(
-            # f"[NTES DEBUG] response_length="
-            # f"{len(response.text)}"
+        #     "[NTES DEBUG] response_length="
+        #     f"{len(response.text)}"
         # )
 
         # -------------------------------------------------
@@ -1705,15 +1699,15 @@ async def fetch_running_status(
         running_html = response.text
 
         # print(
-            # "[NTES DEBUG] FindRunningInstance contains "
-            # f"'Coach Position'="
-            # f"{'Coach Position' in running_html}"
+        #     "[NTES DEBUG] FindRunningInstance contains "
+        #     f"'Coach Position'="
+        #     f"{'Coach Position' in running_html}"
         # )
 
         # print(
-            # "[NTES DEBUG] FindRunningInstance contains "
-            # f"'cpos'="
-            # f"{'cpos' in running_html.lower()}"
+        #     "[NTES DEBUG] FindRunningInstance contains "
+        #     f"'cpos'="
+        #     f"{'cpos' in running_html.lower()}"
         # )
 
         # Existing running parser
@@ -1724,11 +1718,11 @@ async def fetch_running_status(
         )
 
         # print(
-            # "[NTES DEBUG] Running status parsed."
+        #     "[NTES DEBUG] Running status parsed."
         # )
         # print(
-            # f"[NTES DEBUG] stations="
-            # f"{len(result.get('stations', []))}"
+        #     f"[NTES DEBUG] stations="
+        #     f"{len(result.get('stations', []))}"
         # )
 
         # -------------------------------------------------
@@ -1745,14 +1739,13 @@ async def fetch_running_status(
         # print("\n" + "-" * 80)
         # print("[NTES DEBUG] FINAL COACH POSITION")
         # print(f"[NTES DEBUG] coach_position_count={len(coach_position)}")
-        for coach in coach_position:
-            # print(
-                # "[NTES DEBUG] coach="
-                # f"position={coach.get('position')} "
-                # f"type={coach.get('coach_type')} "
-                # f"id={coach.get('coach_id')}"
-            # )
-            pass
+        # for coach in coach_position:
+        #     print(
+        #         "[NTES DEBUG] coach="
+        #         f"position={coach.get('position')} "
+        #         f"type={coach.get('coach_type')} "
+        #         f"id={coach.get('coach_id')}"
+        #     )
 
         # print("\n" + "=" * 80)
         # print("[NTES DEBUG] COMPLETE")

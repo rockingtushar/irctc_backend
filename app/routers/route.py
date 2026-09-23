@@ -1,7 +1,7 @@
 import re
 from typing import Any
 
-import httpx
+from curl_cffi import requests as curl_requests
 from bs4 import BeautifulSoup
 from fastapi import APIRouter, HTTPException
 
@@ -190,9 +190,10 @@ async def get_ntes_train_route(train_number: str):
     }
 
     try:
-        async with httpx.AsyncClient(
+        async with curl_requests.AsyncSession(
+            impersonate="chrome",
             timeout=30.0,
-            follow_redirects=True,
+            allow_redirects=True,
             headers=headers,
         ) as client:
             response = await client.post(
@@ -204,12 +205,12 @@ async def get_ntes_train_route(train_number: str):
                 },
             )
 
-            print("NTES STATUS:", response.status_code)
-            print("NTES FINAL URL:", response.url)
-            print("NTES RESPONSE LENGTH:", len(response.text))
-            print(response.text[:3000])
+            # print("NTES STATUS:", response.status_code)
+            # print("NTES FINAL URL:", response.url)
+            # print("NTES RESPONSE LENGTH:", len(response.text))
+            # print(response.text[:3000])
             
-    except httpx.HTTPError as exc:
+    except Exception as exc:
         raise HTTPException(
             status_code=502,
             detail=f"NTES route request failed: {exc.__class__.__name__}",
