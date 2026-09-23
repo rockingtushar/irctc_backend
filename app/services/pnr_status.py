@@ -7,7 +7,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any
 
-import httpx
+from curl_cffi import requests as curl_requests
 
 
 # ============================================================
@@ -59,7 +59,7 @@ class PNRStatusError(Exception):
 
 @dataclass
 class PNRSession:
-    client: httpx.AsyncClient
+    client: curl_requests.AsyncSession
     created_at: float
     last_used: float
     captcha_config: str = "0"
@@ -180,14 +180,10 @@ def _get_session(session_id: str) -> PNRSession:
 
 async def _create_session() -> tuple[str, PNRSession]:
 
-    client = httpx.AsyncClient(
-        follow_redirects=True,
-        timeout=httpx.Timeout(
-            connect=15.0,
-            read=30.0,
-            write=15.0,
-            pool=15.0,
-        ),
+    client = curl_requests.AsyncSession(
+        impersonate="chrome",
+        allow_redirects=True,
+        timeout=20.0,
     )
 
     try:
@@ -255,17 +251,9 @@ async def _create_session() -> tuple[str, PNRSession]:
 
         return session_id, session
 
-    except httpx.TimeoutException as exc:
+    except Exception as exc:
 
-        await client.aclose()
-
-        raise PNRStatusError(
-            "Indian Railways PNR page timed out."
-        ) from exc
-
-    except httpx.HTTPError as exc:
-
-        await client.aclose()
+        await client.aclose()  # type: ignore[attr-defined]  # type: ignore[attr-defined]
 
         raise PNRStatusError(
             "Unable to initialize Indian Railways PNR session."
@@ -369,13 +357,7 @@ async def fetch_pnr_captcha(
             "image_base64": encoded,
         }
 
-    except httpx.TimeoutException as exc:
-
-        raise PNRStatusError(
-            "Indian Railways CAPTCHA request timed out."
-        ) from exc
-
-    except httpx.HTTPError as exc:
+    except Exception as exc:
 
         raise PNRStatusError(
             "Unable to load Indian Railways CAPTCHA."
@@ -703,13 +685,7 @@ async def fetch_pnr_status(
 
         response.raise_for_status()
 
-    except httpx.TimeoutException as exc:
-
-        raise PNRStatusError(
-            "Indian Railways PNR request timed out."
-        ) from exc
-
-    except httpx.HTTPError as exc:
+    except Exception as exc:
 
         raise PNRStatusError(
             "Indian Railways PNR request failed."
@@ -834,7 +810,7 @@ async def close_pnr_session(
     if session is not None:
 
         try:
-            await session.client.aclose()
+            await session.client.aclose()  # type: ignore[attr-defined]  # type: ignore[attr-defined]
         except Exception:
             pass
 
