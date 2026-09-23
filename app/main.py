@@ -167,6 +167,7 @@ app.include_router(chart_vacancy.router)
 app.include_router(schedule_router)
 app.include_router(route_router)
 app.include_router(alternate_availability_router)
+app.include_router(router)
 # ============================================================
 # TRAIN SESSION CLEANUP LIFECYCLE
 # ============================================================
