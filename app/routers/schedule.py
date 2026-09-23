@@ -239,6 +239,9 @@ async def get_train_schedule(train_number: str):
                 url,
                 headers=request_headers,
             )
+            print("IRCTC STATUS:", response.status_code)
+            print("IRCTC FINAL URL:", response.url)
+            print("IRCTC BODY:", response.text[:1000])
 
             # ------------------------------------------------
             # Debug information
@@ -288,12 +291,12 @@ async def get_train_schedule(train_number: str):
             # "IRCTC REQUEST ERROR:",
             # repr(exc),
         # )
-
+        print("IRCTC EXCEPTION:", repr(exc))
         raise HTTPException(
             status_code=502,
             detail=(
                 "Unable to connect to IRCTC "
-                "schedule service"
+                "schedule service : {exc}",
             ),
         )
 
