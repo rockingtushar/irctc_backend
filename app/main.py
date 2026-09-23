@@ -96,6 +96,38 @@ from app.routers import running_status
 from app.routers import pnr_status
 from app.routers import chart_vacancy
 from app.routers.schedule import router as schedule_router
+from app.routers.route import router as route_router
+from app.routers.alternate_availability import router as alternate_availability_router
+from fastapi import APIRouter
+from curl_cffi import requests
+
+router = APIRouter()
+
+@router.get("/test/railway-tls")
+async def test_railway_tls():
+    url = "https://www.indianrail.gov.in/enquiry/TBIS/TrainBetweenImportantStations.html?locale=en"
+
+    try:
+        r = requests.get(
+            url,
+            impersonate="chrome",
+            timeout=20,
+        )
+
+        return {
+            "success": True,
+            "status": r.status_code,
+            "content_type": r.headers.get("content-type"),
+            "length": len(r.content),
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error_type": type(e).__name__,
+            "error": str(e),
+        }
+
 
 app = FastAPI(
     title="Indian Train Search API",
@@ -115,8 +147,6 @@ ALLOWED_ORIGINS = [
     "http://127.0.0.1:5173",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
-    "https://irctc-peach.vercel.app",
-    "https://irctc-inky.vercel.app",
     "https://irctc-woad.vercel.app",
 ]
 
@@ -135,6 +165,8 @@ app.include_router(running_status.router)
 app.include_router(pnr_status.router)
 app.include_router(chart_vacancy.router)
 app.include_router(schedule_router)
+app.include_router(route_router)
+app.include_router(alternate_availability_router)
 # ============================================================
 # TRAIN SESSION CLEANUP LIFECYCLE
 # ============================================================
