@@ -6,7 +6,8 @@ import uuid
 from datetime import datetime
 from typing import Any, Optional
 
-import httpx
+from curl_cffi import requests as curl_requests
+# from curl_cffi.requests.exceptions import RequestsError
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -56,7 +57,7 @@ CLEANUP_INTERVAL_SECONDS = 60
 
 @dataclass
 class TrainSession:
-    client: httpx.AsyncClient
+    client: curl_requests.AsyncSession
     created_at: float
     last_used: float
     captcha_verified: bool = False
@@ -295,7 +296,7 @@ async def get_session(
 
 async def remove_session(
     session_id: str,
-) -> Optional[httpx.AsyncClient]:
+) -> Optional[curl_requests.AsyncSession]:
 
     async with train_sessions_lock:
 
@@ -359,7 +360,7 @@ async def cleanup_expired_sessions() -> None:
 
     now = time.monotonic()
 
-    expired_clients: list[httpx.AsyncClient] = []
+    expired_clients: list[curl_requests.AsyncSession] = []
 
     async with train_sessions_lock:
 
@@ -385,7 +386,7 @@ async def cleanup_expired_sessions() -> None:
     for client in expired_clients:
 
         try:
-            await client.aclose()
+            await client.aclose()  # type: ignore[attr-defined]
 
         except Exception:
             pass
@@ -444,7 +445,7 @@ async def stop_cleanup_task() -> None:
         cleanup_task = None
 
     clients_to_close: list[
-        httpx.AsyncClient
+        curl_requests.AsyncSession
     ] = []
 
     async with train_sessions_lock:
@@ -460,7 +461,7 @@ async def stop_cleanup_task() -> None:
     for client in clients_to_close:
 
         try:
-            await client.aclose()
+            await client.aclose()  # type: ignore[attr-defined]
 
         except Exception:
             pass
@@ -471,7 +472,7 @@ async def stop_cleanup_task() -> None:
 # ============================================================
 
 async def fetch_captcha_image(
-    client: httpx.AsyncClient,
+    client: curl_requests.AsyncSession,
 ) -> bytes:
 
     response = await client.get(
@@ -505,11 +506,12 @@ async def fetch_captcha_image(
 @router.post("/captcha/start")
 async def start_captcha() -> dict[str, str]:
 
-    client = httpx.AsyncClient(
+    client = curl_requests.AsyncSession(
         headers={
             "User-Agent": USER_AGENT,
         },
-        follow_redirects=True,
+        impersonate="chrome",
+        allow_redirects=True,
         timeout=20.0,
     )
 
@@ -560,12 +562,12 @@ async def start_captcha() -> dict[str, str]:
 
     except HTTPException:
 
-        await client.aclose()
+        await client.aclose()  # type: ignore[attr-defined]
         raise
 
-    except httpx.HTTPError as exc:
+    except Exception as exc:
 
-        await client.aclose()
+        await client.aclose()  # type: ignore[attr-defined]
 
         raise HTTPException(
             status_code=502,
@@ -574,19 +576,6 @@ async def start_captcha() -> dict[str, str]:
                 "for captcha."
             ),
         ) from exc
-
-    except Exception as exc:
-
-        await client.aclose()
-
-        raise HTTPException(
-            status_code=502,
-            detail=(
-                "Failed to initialize Indian Railways "
-                "captcha session."
-            ),
-        ) from exc
-
 
 # ============================================================
 # REFRESH CAPTCHA
@@ -623,7 +612,7 @@ async def refresh_captcha(
         )
 
         if client is not None:
-            await client.aclose()
+            await client.aclose()  # type: ignore[attr-defined]
 
         raise HTTPException(
             status_code=404,
@@ -651,14 +640,14 @@ async def refresh_captcha(
             "captcha_image_base64": captcha_base64,
         }
 
-    except httpx.HTTPError as exc:
+    except Exception as exc:
 
         client = await remove_session(
             request.session_id
         )
 
         if client is not None:
-            await client.aclose()
+            await client.aclose()  # type: ignore[attr-defined]
 
         raise HTTPException(
             status_code=502,
@@ -975,7 +964,7 @@ async def fetch_train_availability(
 
         response.raise_for_status()
 
-    except httpx.HTTPError as exc:
+    except Exception as exc:
 
         # print(
         #     "AVAILABILITY HTTP ERROR:",
@@ -1213,7 +1202,7 @@ async def search_trains(
         )
 
         if client is not None:
-            await client.aclose()
+            await client.aclose()  # type: ignore[attr-defined]
 
         raise HTTPException(
             status_code=401,
@@ -1356,7 +1345,7 @@ async def search_trains(
 
         response.raise_for_status()
 
-    except httpx.HTTPStatusError as exc:
+    except Exception as exc:
 
         raise HTTPException(
             status_code=502,
@@ -1366,7 +1355,7 @@ async def search_trains(
             ),
         ) from exc
 
-    except httpx.HTTPError as exc:
+    except Exception as exc:
 
         raise HTTPException(
             status_code=502,
@@ -1426,7 +1415,7 @@ async def search_trains(
         )
 
         if client is not None:
-            await client.aclose()
+            await client.aclose()  # type: ignore[attr-defined]
 
         raise HTTPException(
             status_code=401,
@@ -1570,7 +1559,7 @@ async def get_train_availability(
         )
 
         if client is not None:
-            await client.aclose()
+            await client.aclose()  # type: ignore[attr-defined]
 
         raise HTTPException(
             status_code=401,
@@ -1760,23 +1749,13 @@ async def get_train_availability(
 
             response.raise_for_status()
 
-        except httpx.HTTPStatusError as exc:
+        except Exception as exc:
 
             raise HTTPException(
                 status_code=502,
                 detail=(
                     "Indian Railways returned an HTTP error "
                     "while fetching train availability."
-                ),
-            ) from exc
-
-        except httpx.HTTPError as exc:
-
-            raise HTTPException(
-                status_code=502,
-                detail=(
-                    "Unable to connect to Indian Railways "
-                    "for train availability."
                 ),
             ) from exc
 
@@ -1847,7 +1826,7 @@ async def get_train_availability(
                 )
 
                 if client is not None:
-                    await client.aclose()
+                    await client.aclose()  # type: ignore[attr-defined]
 
                 raise HTTPException(
                     status_code=401,
