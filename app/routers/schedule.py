@@ -204,7 +204,6 @@ async def get_train_schedule(train_number: str):
         async with curl_requests.AsyncSession(
             impersonate="chrome",
             timeout=30.0,
-            allow_redirects=True,
             headers=IRCTC_HEADERS,
         ) as client:
 
