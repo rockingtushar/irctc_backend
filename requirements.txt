@@ -4,7 +4,7 @@ sqlalchemy>=2.0,<3.0
 asyncpg
 python-dotenv
 pydantic>=2.0,<3.0
-#httpx
+
 psycopg2
 beautifulsoup4>=4.12,<5
 # playwright
