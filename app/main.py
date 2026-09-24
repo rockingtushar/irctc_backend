@@ -1,114 +1,149 @@
-# from fastapi import FastAPI
-# from fastapi.middleware.cors import CORSMiddleware
-# from fastapi.middleware.gzip import GZipMiddleware
-# from app.routers.stations import router as stations_router
-# from app.routers.trains import (router as trains_router,start_cleanup_task,stop_cleanup_task,)
-# from sqlalchemy import text
-# from app.database import engine
-    
-    
-
-
-# app = FastAPI(
-#     title="Indian Train Search API",
-#     version="1.0.0",
-# )
-
-
-# # GZIP compression
-# app.add_middleware(
-#     GZipMiddleware,
-#     minimum_size=1000,
-#     compresslevel=6,
-# )
-
-
-# # CORS
-# ALLOWED_ORIGINS = [
-#     "http://localhost:5173",
-#     "http://127.0.0.1:5173",
-#     "http://localhost:3000",
-#     "http://127.0.0.1:3000",
-#     "https://irctc-peach.vercel.app",
-# ]
-
-
-# app.add_middleware(
-#     CORSMiddleware,
-#     allow_origins=ALLOWED_ORIGINS,
-#     allow_credentials=True,
-#     allow_methods=["*"],
-#     allow_headers=["*"],
-# )
-
-
-# # Routers
-# app.include_router(stations_router)
-# app.include_router(trains_router)
-
-
-# # ============================================================
-# # TRAIN SESSION CLEANUP LIFECYCLE
-# # ============================================================
-
-# @app.on_event("startup")
-# async def startup_train_cleanup() -> None:
-#     await start_cleanup_task()
-
-
-# @app.on_event("shutdown")
-# async def shutdown_train_cleanup() -> None:
-#     await stop_cleanup_task()
-
-# @app.get("/")
-# async def root():
-#     return {
-#         "message": "Indian Train Search API is running"
-#     }
-
-
-# @app.get("/health")
-# async def health():
-#     try:
-#         async with engine.connect() as conn:
-#             await conn.execute(text("SELECT 1"))
-
-#         return {
-#             "status": "ok",
-#             "database": "connected"
-#         }
-
-#     except Exception:
-#         return {
-#             "status": "ok",
-#             "database": "warming"
-#         }
-
-
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from app.routers.stations import router as stations_router
-from app.routers.trains import (router as trains_router, start_cleanup_task, stop_cleanup_task)
+
 from sqlalchemy import text
+
+from curl_cffi import requests
+
 from app.database import engine
+from app.routers.stations import router as stations_router
+from app.routers.trains import (
+    router as trains_router,
+    start_cleanup_task,
+    stop_cleanup_task,
+)
 from app.routers import running_status
 from app.routers import pnr_status
 from app.routers import chart_vacancy
 from app.routers.schedule import router as schedule_router
 from app.routers.route import router as route_router
 
-from fastapi import APIRouter
-from curl_cffi import requests
 
-router = APIRouter()
 
-@router.get("/test/railway-tls")
-async def test_railway_tls():
-    url = "https://www.indianrail.gov.in/enquiry/TBIS/TrainBetweenImportantStations.html?locale=en"
+# ============================================================
+# FASTAPI APP
+# ============================================================
+
+app = FastAPI(
+    title="Indian Train Search API",
+    version="1.0.0",
+)
+
+
+# ============================================================
+# TEST: IRCTC SCHEDULE ACCESS
+# ============================================================
+
+@app.get("/test/schedule/{train_number}")
+async def test_schedule(train_number: str):
+    url = (
+        "https://www.irctc.co.in/"
+        f"eticketing/protected/mapps1/trnscheduleenquiry/{train_number}"
+    )
+
+    headers = {
+        "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "en-GB,en-US;q=0.9,en;q=0.8,hi;q=0.7",
+        "Origin": "https://www.irctc.co.in",
+        "Referer": "https://www.irctc.co.in/",
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/153.0.0.0 Safari/537.36"
+        ),
+    }
 
     try:
-        r = requests.get(
+        async with requests.AsyncSession(
+            impersonate="chrome",
+            timeout=30.0,
+            headers=headers,
+        ) as client:
+            response = await client.get(
+                url,
+                headers=headers,
+            )
+
+        return {
+            "success": True,
+            "status": response.status_code,
+            "url": str(response.url),
+            "content_type": response.headers.get("content-type"),
+            "length": len(response.content),
+            "body": response.text[:1000],
+        }
+
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Schedule test failed: {exc}",
+        ) from exc
+
+
+# ============================================================
+# TEST: NTES ACCESS
+# ============================================================
+
+@app.get("/test/ntes")
+async def test_ntes():
+    url = "https://enquiry.indianrail.gov.in/mntes/"
+
+    headers = {
+        "Accept": (
+            "text/html,application/xhtml+xml,"
+            "application/xml;q=0.9,*/*;q=0.8"
+        ),
+        "Accept-Language": "en-GB,en-US;q=0.9,en;q=0.8,hi;q=0.7",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+        "Referer": "https://enquiry.indianrail.gov.in/mntes/",
+        "Origin": "https://enquiry.indianrail.gov.in",
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/153.0.0.0 Safari/537.36"
+        ),
+    }
+
+    try:
+        response = requests.get(
+            url,
+            impersonate="chrome",
+            headers=headers,
+            timeout=30,
+        )
+
+        return {
+            "success": True,
+            "status": response.status_code,
+            "url": str(response.url),
+            "content_type": response.headers.get("content-type"),
+            "length": len(response.content),
+            "body": response.text[:1000],
+        }
+
+    except Exception as exc:
+        return {
+            "success": False,
+            "error_type": type(exc).__name__,
+            "error": str(exc),
+        }
+
+
+# ============================================================
+# TEST: INDIAN RAILWAYS TLS
+# ============================================================
+
+@app.get("/test/railway-tls")
+async def test_railway_tls():
+    url = (
+        "https://www.indianrail.gov.in/"
+        "enquiry/TBIS/TrainBetweenImportantStations.html?locale=en"
+    )
+
+    try:
+        response = requests.get(
             url,
             impersonate="chrome",
             timeout=20,
@@ -116,32 +151,34 @@ async def test_railway_tls():
 
         return {
             "success": True,
-            "status": r.status_code,
-            "content_type": r.headers.get("content-type"),
-            "length": len(r.content),
+            "status": response.status_code,
+            "content_type": response.headers.get("content-type"),
+            "length": len(response.content),
         }
 
-    except Exception as e:
+    except Exception as exc:
         return {
             "success": False,
-            "error_type": type(e).__name__,
-            "error": str(e),
+            "error_type": type(exc).__name__,
+            "error": str(exc),
         }
 
 
-app = FastAPI(
-    title="Indian Train Search API",
-    version="1.0.0",
-)
+# ============================================================
+# GZIP COMPRESSION
+# ============================================================
 
-# GZIP compression
 app.add_middleware(
     GZipMiddleware,
     minimum_size=1000,
     compresslevel=6,
 )
 
+
+# ============================================================
 # CORS
+# ============================================================
+
 ALLOWED_ORIGINS = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
@@ -158,7 +195,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Routers
+
+# ============================================================
+# ROUTERS
+# ============================================================
+
 app.include_router(stations_router)
 app.include_router(trains_router)
 app.include_router(running_status.router)
@@ -166,7 +207,9 @@ app.include_router(pnr_status.router)
 app.include_router(chart_vacancy.router)
 app.include_router(schedule_router)
 app.include_router(route_router)
-app.include_router(router)
+
+
+
 # ============================================================
 # TRAIN SESSION CLEANUP LIFECYCLE
 # ============================================================
@@ -175,9 +218,15 @@ app.include_router(router)
 async def startup_train_cleanup() -> None:
     await start_cleanup_task()
 
+
 @app.on_event("shutdown")
 async def shutdown_train_cleanup() -> None:
     await stop_cleanup_task()
+
+
+# ============================================================
+# ROOT
+# ============================================================
 
 @app.get("/")
 async def root():
@@ -185,17 +234,24 @@ async def root():
         "message": "Indian Train Search API is running"
     }
 
+
+# ============================================================
+# HEALTH
+# ============================================================
+
 @app.get("/health")
 async def health():
     try:
         async with engine.connect() as conn:
             await conn.execute(text("SELECT 1"))
+
         return {
             "status": "ok",
-            "database": "connected"
+            "database": "connected",
         }
+
     except Exception:
         return {
             "status": "ok",
-            "database": "warming"
+            "database": "warming",
         }
