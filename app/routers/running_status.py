@@ -1,12 +1,9 @@
 from typing import Any
+import os
 
+import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
-
-from app.services.train_running import (
-    NTESRunningError,
-    fetch_running_status,
-)
 
 
 router = APIRouter(
@@ -37,25 +34,61 @@ async def running_status(
     request: RunningStatusRequest,
 ) -> dict[str, Any]:
 
-    try:
-        result = await fetch_running_status(
-            train_number=request.train_no,
-            journey_date=request.journey_date,
+    # Google Cloud Run NTES service URL
+    ntes_service_url = os.getenv("NTES_SERVICE_URL")
+
+    if not ntes_service_url:
+        raise HTTPException(
+            status_code=500,
+            detail="NTES_SERVICE_URL is not configured on Render.",
         )
 
-        return {
-            "success": True,
-            "data": result,
-        }
+    target_url = (
+        f"{ntes_service_url.rstrip('/')}"
+        "/api/trains/running-status"
+    )
 
-    except NTESRunningError as exc:
+    try:
+        async with httpx.AsyncClient(
+            timeout=60.0,
+        ) as client:
+
+            response = await client.post(
+                target_url,
+                json={
+                    "train_no": request.train_no,
+                    "journey_date": request.journey_date,
+                },
+            )
+
+        # Google Cloud returned an error
+        if response.status_code >= 400:
+
+            try:
+                error_data = response.json()
+                detail = error_data.get("detail")
+            except Exception:
+                detail = None
+
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=detail or "Google Cloud NTES service returned an error.",
+            )
+
+        # Return Google Cloud response directly
+        return response.json()
+
+    except HTTPException:
+        raise
+
+    except httpx.HTTPError as exc:
         raise HTTPException(
             status_code=502,
-            detail=str(exc),
+            detail="Google Cloud NTES service is unavailable.",
         ) from exc
 
     except Exception as exc:
         raise HTTPException(
             status_code=500,
-            detail="Unexpected error while fetching train running status.",
+            detail="Unexpected error while contacting Google Cloud NTES service.",
         ) from exc
