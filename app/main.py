@@ -87,48 +87,43 @@ async def test_schedule(train_number: str):
 
 @app.get("/test/ntes")
 async def test_ntes():
-    url = "https://enquiry.indianrail.gov.in/mntes/"
+    urls = [
+        "https://enquiry.indianrail.gov.in/",
+        "https://enquiry.indianrail.gov.in/mntes/",
+    ]
 
-    headers = {
-        "Accept": (
-            "text/html,application/xhtml+xml,"
-            "application/xml;q=0.9,*/*;q=0.8"
-        ),
-        "Accept-Language": "en-GB,en-US;q=0.9,en;q=0.8,hi;q=0.7",
-        "Cache-Control": "no-cache",
-        "Pragma": "no-cache",
-        "Referer": "https://enquiry.indianrail.gov.in/mntes/",
-        "Origin": "https://enquiry.indianrail.gov.in",
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/153.0.0.0 Safari/537.36"
-        ),
+    results = []
+
+    for url in urls:
+        try:
+            response = requests.get(
+                url,
+                impersonate="chrome",
+                timeout=15,
+            )
+
+            results.append({
+                "url": url,
+                "success": True,
+                "status": response.status_code,
+                "final_url": str(response.url),
+                "content_type": response.headers.get("content-type"),
+                "length": len(response.content),
+                "body": response.text[:300],
+            })
+
+        except Exception as exc:
+            results.append({
+                "url": url,
+                "success": False,
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+            })
+
+    return {
+        "success": True,
+        "tests": results,
     }
-
-    try:
-        response = requests.get(
-            url,
-            impersonate="chrome",
-            headers=headers,
-            timeout=30,
-        )
-
-        return {
-            "success": True,
-            "status": response.status_code,
-            "url": str(response.url),
-            "content_type": response.headers.get("content-type"),
-            "length": len(response.content),
-            "body": response.text[:1000],
-        }
-
-    except Exception as exc:
-        return {
-            "success": False,
-            "error_type": type(exc).__name__,
-            "error": str(exc),
-        }
 
 
 # ============================================================
