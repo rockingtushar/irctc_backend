@@ -81,6 +81,7 @@ app.include_router(pnr_status.router)
 app.include_router(chart_vacancy.router)
 app.include_router(route_router)
 app.include_router(alternate_availability_router)
+app.include_router(feedback_router)
 
 
 
