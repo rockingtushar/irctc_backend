@@ -16,9 +16,12 @@ from app.routers.trains import (
 from app.routers import running_status
 from app.routers import pnr_status
 from app.routers import chart_vacancy
-from app.routers.schedule import router as schedule_router
+
 from app.routers.route import router as route_router
 from app.routers.alternate_availability import router as alternate_availability_router
+from app.routers.feedback import router as feedback_router
+
+
 
 
 
@@ -76,7 +79,6 @@ app.include_router(trains_router)
 app.include_router(running_status.router)
 app.include_router(pnr_status.router)
 app.include_router(chart_vacancy.router)
-app.include_router(schedule_router)
 app.include_router(route_router)
 app.include_router(alternate_availability_router)
 
