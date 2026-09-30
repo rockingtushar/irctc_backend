@@ -16,7 +16,7 @@ class FeedbackRequest(BaseModel):
 @router.post("")
 async def submit_feedback(request: FeedbackRequest):
     message = (
-        "📝 New App Feedback\n\n"
+        " IRCTC App Feedback\n\n"
         f"Category: {request.category}\n"
         f"Rating: {request.rating or 'Not provided'}\n\n"
         f"Message:\n{request.message}"
