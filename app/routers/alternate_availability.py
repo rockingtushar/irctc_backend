@@ -506,19 +506,6 @@ def _build_station_pairs(
 
     pairs.sort(key=_pair_priority)
 
-    for pair in pairs:
-        pair_from = _normalize_code(
-            pair["from"]["station_code"]
-        )
-        pair_to = _normalize_code(
-            pair["to"]["station_code"]
-        )
-
-        if pair_from == "SPJ" and pair_to == "CPR":
-            print("\n🔥🔥🔥 SPJ -> CPR PRESENT AFTER SORT 🔥🔥🔥")
-            print("PAIR:", pair)
-            print("TOTAL PAIRS:", len(pairs))
-
     return pairs
 
 
@@ -741,8 +728,11 @@ async def _run_alternate_job(
             }
 
 
-            if from_code == "SPJ" and to_code == "CPR":
-               print("🔥 CALLING FETCH_TRAIN_AVAILABILITY: SPJ -> CPR")
+            # DEBUGGER CONDITION COMMENTED OUT:
+
+
+            # if from_code == "SPJ" and to_code == "CPR":
+               # DEBUGGER COMMENTED OUT: print("🔥 CALLING FETCH_TRAIN_AVAILABILITY: SPJ -> CPR")
 
             try:
                 # The existing backend deliberately serializes
