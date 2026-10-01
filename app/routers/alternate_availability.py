@@ -437,6 +437,9 @@ def _build_station_pairs(
 
     pairs: list[dict[str, Any]] = []
 
+
+
+
     for i in range(len(stations)):
         for j in range(i + 1, len(stations)):
 
@@ -450,6 +453,7 @@ def _build_station_pairs(
             to_code = _normalize_code(
                 to_station["station_code"]
             )
+
 
             # Original WL journey was already checked.
             if (
@@ -467,24 +471,53 @@ def _build_station_pairs(
                 }
             )
 
-    # Put combinations closest to the original journey first.
+    # Put the most useful alternatives first.
     #
-    # IMPORTANT:
-    # This does NOT remove any combinations.
-    # It only allows useful alternatives to appear earlier in SSE.
-    pairs.sort(
-        key=lambda item: (
-            abs(
-                item["from_index"] - source_index
-            )
-            +
-            abs(
-                item["to_index"] - destination_index
-            ),
-            item["from_index"],
-            item["to_index"],
+    # Priority:
+    #   0 = same original source, different destination
+    #   1 = different source, same original destination
+    #   2 = nearby source + nearby destination
+    #   3 = remaining route combinations
+    #
+    # This keeps ALL pairs. It only changes the order in which
+    # availability requests are made.
+    def _pair_priority(item: dict[str, Any]) -> tuple[int, int, int, int]:
+        from_index = item["from_index"]
+        to_index = item["to_index"]
+
+        same_source = from_index == source_index
+        same_destination = to_index == destination_index
+
+        if same_source and not same_destination:
+            priority = 0
+        elif not same_source and same_destination:
+            priority = 1
+        elif not same_source and not same_destination:
+            priority = 2
+        else:
+            priority = 3
+
+        distance = (
+            abs(from_index - source_index)
+            + abs(to_index - destination_index)
         )
-    )
+
+        return (priority, distance, from_index, to_index)
+
+    pairs.sort(key=_pair_priority)
+
+    for pair in pairs:
+        pair_from = _normalize_code(
+            pair["from"]["station_code"]
+        )
+        pair_to = _normalize_code(
+            pair["to"]["station_code"]
+        )
+
+        if pair_from == "SPJ" and pair_to == "CPR":
+            print("\n🔥🔥🔥 SPJ -> CPR PRESENT AFTER SORT 🔥🔥🔥")
+            print("PAIR:", pair)
+            print("TOTAL PAIRS:", len(pairs))
 
     return pairs
 
@@ -635,6 +668,8 @@ async def _run_alternate_job(
     job.status = "running"
     job.total = len(station_pairs)
 
+
+
     await _publish_event(
         job,
         "started",
@@ -693,6 +728,7 @@ async def _run_alternate_job(
                 to_station["station_code"]
             )
 
+
             train_payload = {
                 "trainNumber": request.train_number,
                 "fromStnCode": from_code,
@@ -703,6 +739,10 @@ async def _run_alternate_job(
                     else []
                 ),
             }
+
+
+            if from_code == "SPJ" and to_code == "CPR":
+               print("🔥 CALLING FETCH_TRAIN_AVAILABILITY: SPJ -> CPR")
 
             try:
                 # The existing backend deliberately serializes
@@ -717,13 +757,18 @@ async def _run_alternate_job(
                         class_code=class_code,
                     )
 
+
                 # Keep the existing session alive while a long
                 # alternate search is running.
                 await update_last_used(
                     request.session_id
                 )
 
-            except Exception:
+            # except Exception:
+            #     job.errors += 1
+            #     job.checked += 1
+
+            except Exception as exc:
                 job.errors += 1
                 job.checked += 1
 
