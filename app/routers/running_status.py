@@ -64,15 +64,24 @@ async def running_status(
         # Google Cloud returned an error
         if response.status_code >= 400:
 
+            # Keep the actual NTES/Cloud error only in server logs.
             try:
                 error_data = response.json()
-                detail = error_data.get("detail")
+                raw_detail = error_data.get("detail")
             except Exception:
-                detail = None
+                raw_detail = None
+
+            print(
+                "NTES RUNNING STATUS ERROR:",
+                raw_detail,
+            )
 
             raise HTTPException(
-                status_code=response.status_code,
-                detail=detail or "Google Cloud NTES service returned an error.",
+                status_code=502,
+                detail=(
+                    "Unable to fetch train running status "
+                    "right now. Please try again."
+                ),
             )
 
         # Return Google Cloud response directly

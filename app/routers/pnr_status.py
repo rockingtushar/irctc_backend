@@ -61,9 +61,17 @@ async def pnr_session() -> dict[str, Any]:
 
     except PNRStatusError as exc:
 
+        print(
+            "PNR SESSION ERROR:",
+            repr(exc),
+        )
+
         raise HTTPException(
             status_code=502,
-            detail=str(exc),
+            detail=(
+                "Unable to initialize PNR service "
+                "right now. Please try again."
+            ),
         ) from exc
 
 
@@ -91,16 +99,37 @@ async def pnr_captcha(
 
         message = str(exc)
 
-        if "session" in message.lower():
+        print(
+            "PNR CAPTCHA ERROR:",
+            repr(exc),
+        )
+
+        lower_message = message.lower()
+
+        if "session" in lower_message:
             status_code = 400
-        elif "timed out" in message.lower():
+            detail = (
+                "PNR session expired or invalid. "
+                "Please create a new PNR session."
+            )
+
+        elif "timed out" in lower_message:
             status_code = 504
+            detail = (
+                "PNR service timed out. "
+                "Please try again."
+            )
+
         else:
             status_code = 502
+            detail = (
+                "Unable to load PNR captcha "
+                "right now. Please try again."
+            )
 
         raise HTTPException(
             status_code=status_code,
-            detail=message,
+            detail=detail,
         ) from exc
 
 
@@ -128,16 +157,37 @@ async def pnr_captcha_refresh(
 
         message = str(exc)
 
-        if "session" in message.lower():
+        print(
+            "PNR CAPTCHA REFRESH ERROR:",
+            repr(exc),
+        )
+
+        lower_message = message.lower()
+
+        if "session" in lower_message:
             status_code = 400
-        elif "timed out" in message.lower():
+            detail = (
+                "PNR session expired or invalid. "
+                "Please create a new PNR session."
+            )
+
+        elif "timed out" in lower_message:
             status_code = 504
+            detail = (
+                "PNR service timed out. "
+                "Please try again."
+            )
+
         else:
             status_code = 502
+            detail = (
+                "Unable to refresh PNR captcha "
+                "right now. Please try again."
+            )
 
         raise HTTPException(
             status_code=status_code,
-            detail=message,
+            detail=detail,
         ) from exc
 
 
@@ -167,11 +217,19 @@ async def pnr_status(
 
         message = str(exc)
 
+        print(
+            "PNR STATUS ERROR:",
+            repr(exc),
+        )
+
         lower_message = message.lower()
 
         if "exactly 10 digits" in lower_message:
 
             status_code = 400
+            detail = (
+                "PNR must be exactly 10 digits."
+            )
 
         elif (
             "captcha not matched" in lower_message
@@ -182,22 +240,38 @@ async def pnr_status(
         ):
 
             status_code = 422
+            detail = (
+                "Invalid or missing captcha. "
+                "Please enter the captcha again."
+            )
 
         elif "session" in lower_message:
 
             status_code = 400
+            detail = (
+                "PNR session expired or invalid. "
+                "Please create a new PNR session."
+            )
 
         elif "timed out" in lower_message:
 
             status_code = 504
+            detail = (
+                "PNR service timed out. "
+                "Please try again."
+            )
 
         else:
 
             status_code = 502
+            detail = (
+                "Put Correct PNR number OR Unable to fetch PNR status "
+                "right now. Please try again."
+            )
 
         raise HTTPException(
             status_code=status_code,
-            detail=message,
+            detail=detail,
         ) from exc
 
 

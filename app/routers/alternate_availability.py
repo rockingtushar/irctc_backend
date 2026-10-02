@@ -260,11 +260,18 @@ async def _fetch_train_route(
         response.raise_for_status()
 
     except httpx.HTTPError as exc:
+
+        # Keep technical NTES/HTTP error only in server logs.
+        print(
+            "ALTERNATE ROUTE REQUEST ERROR:",
+            repr(exc),
+        )
+
         raise HTTPException(
             status_code=502,
             detail=(
-                "Unable to fetch train route from NTES "
-                f"route service: {exc}"
+                "Unable to fetch train route "
+                "right now. Please try again."
             ),
         ) from exc
 
@@ -283,13 +290,18 @@ async def _fetch_train_route(
         )
 
     if payload.get("success") is False:
+
+        # Keep the technical upstream message only in server logs.
+        print(
+            "ALTERNATE ROUTE SERVICE ERROR:",
+            payload.get("message"),
+        )
+
         raise HTTPException(
             status_code=502,
-            detail=str(
-                payload.get(
-                    "message",
-                    "NTES route service failed.",
-                )
+            detail=(
+                "Unable to fetch train route "
+                "right now. Please try again."
             ),
         )
 
@@ -904,7 +916,17 @@ async def _run_alternate_job(
     except Exception as exc:
 
         job.status = "failed"
-        job.error = str(exc)
+
+        # Keep the technical exception only in server logs.
+        print(
+            "ALTERNATE JOB ERROR:",
+            repr(exc),
+        )
+
+        job.error = (
+            "Unable to check alternate availability "
+            "right now. Please try again."
+        )
 
         await _publish_event(
             job,
@@ -1110,6 +1132,69 @@ async def alternate_availability_status(
         ),
         "error": job.error,
     }
+
+
+@router.post("/cancel/{job_id}")
+async def cancel_alternate_availability(
+    job_id: str,
+) -> dict[str, Any]:
+
+    # Clean up old jobs first
+    await _cleanup_old_jobs()
+
+    job = alternate_jobs.get(job_id)
+
+    if job is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Alternate availability job not found.",
+        )
+    # If job is already in a terminal state,
+    # there is nothing left to cancel.
+    if job.status in (
+        "completed",
+        "failed",
+        "cancelled",
+    ):
+        return {
+            "success": True,
+            "job_id": job.job_id,
+            "status": job.status,
+            "message": "Alternate availability job is already stopped.",
+            "checked": job.checked,
+            "total": job.total,
+            "found": job.found,
+        }
+
+    # Cancel the actual backend asyncio task.
+    if (
+        job.status in ("starting", "searching")
+        and job.task is not None
+        and not job.task.done()
+    ):
+        job.task.cancel()
+
+        return {
+            "success": True,
+            "job_id": job.job_id,
+            "status": "cancelling",
+            "message": "Alternate availability search is being cancelled.",
+            "checked": job.checked,
+            "total": job.total,
+            "found": job.found,
+        }
+
+    # Task is already finished or unavailable.
+    return {
+        "success": True,
+        "job_id": job.job_id,
+        "status": job.status,
+        "message": "Alternate availability search is already stopped.",
+        "checked": job.checked,
+        "total": job.total,
+        "found": job.found,
+    }
+
 
 
 # ---------------------------------------------------------------------------
