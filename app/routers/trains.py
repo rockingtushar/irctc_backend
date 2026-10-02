@@ -669,12 +669,44 @@ def classify_tbis_response(
     if not isinstance(data, dict):
         return "UNKNOWN_ERROR"
 
+    # --------------------------------------------------------
+    # SUCCESS
+    # --------------------------------------------------------
+
     train_list = data.get(
         "trainBtwnStnsList"
     )
 
     if isinstance(train_list, list):
         return "SUCCESS"
+
+    # --------------------------------------------------------
+    # NO DIRECT TRAINS
+    #
+    # IRCTC returns this as:
+    # {
+    #     "errorMessage": "No direct trains found...."
+    # }
+    #
+    # This is a valid search response, NOT an API error.
+    # --------------------------------------------------------
+
+    error_message = data.get("errorMessage")
+
+    if isinstance(error_message, str):
+
+        error_text = error_message.strip().lower()
+
+        if (
+            "no direct trains found" in error_text
+            or "no trains found" in error_text
+            or "no train found" in error_text
+        ):
+            return "NO_TRAINS"
+
+    # --------------------------------------------------------
+    # INVALID CAPTCHA
+    # --------------------------------------------------------
 
     serialized = str(data).lower()
 
@@ -690,6 +722,10 @@ def classify_tbis_response(
         if word in serialized:
             return "INVALID_CAPTCHA"
 
+    # --------------------------------------------------------
+    # SESSION INVALID
+    # --------------------------------------------------------
+
     session_words = (
         "session expired",
         "session invalid",
@@ -702,7 +738,107 @@ def classify_tbis_response(
         if word in serialized:
             return "SESSION_INVALID"
 
+    # --------------------------------------------------------
+    # UNKNOWN
+    # --------------------------------------------------------
+
     return "UNKNOWN_ERROR"
+
+
+async def check_trains_on_future_dates(
+    session: TrainSession,
+    source_station: str,
+    destination_station: str,
+    selected_date: str,
+    days_to_check: int = 7,
+) -> bool:
+    """
+    Check whether the same source -> destination route
+    has trains on future dates after the selected date.
+
+    Only future dates are checked.
+    Past dates are never queried.
+
+    Returns:
+        True  -> same route has at least one train
+                  on a future date.
+        False -> no train found on checked future dates.
+    """
+
+    from datetime import datetime, timedelta
+
+    try:
+        selected_dt = datetime.strptime(
+            selected_date.strip(),
+            "%Y-%m-%d",
+        ).date()
+
+    except ValueError:
+        return False
+
+    for day_offset in range(
+        1,
+        days_to_check + 1,
+    ):
+        check_date = (
+            selected_dt
+            + timedelta(days=day_offset)
+        )
+
+        formatted_date = check_date.strftime(
+            "%d-%m-%Y"
+        )
+
+        params = {
+            "inputCaptcha": "",
+            "dt": formatted_date,
+            "sourceStation": source_station,
+            "destinationStation": destination_station,
+            "flexiWithDate": "y",
+            "inputPage": "TBIS",
+            "language": "en",
+            "_": timestamp_ms(),
+        }
+
+        try:
+            response = await session.client.get(
+                COMMON_CAPTCHA_URL,
+                params=params,
+                headers=build_headers(),
+                timeout=30.0,
+            )
+
+            response.raise_for_status()
+
+            data = response.json()
+
+        except Exception:
+            # A failed date check must not fail
+            # the original train search.
+            continue
+
+        if not isinstance(data, dict):
+            continue
+
+        result_type = classify_tbis_response(data)
+
+        # Do not treat CAPTCHA/session/upstream errors
+        # as proof that the route has no trains.
+        if result_type != "SUCCESS":
+            continue
+
+        future_train_list = data.get(
+            "trainBtwnStnsList",
+            [],
+        )
+
+        if (
+            isinstance(future_train_list, list)
+            and len(future_train_list) > 0
+        ):
+            return True
+
+    return False
 
 
 # ============================================================
@@ -1339,7 +1475,7 @@ async def search_trains(
     # UNKNOWN
     # --------------------------------------------------------
 
-    if result_type != "SUCCESS":
+    if result_type not in ("SUCCESS", "NO_TRAINS"):
 
         raise HTTPException(
             status_code=502,
@@ -1717,12 +1853,22 @@ async def get_train_availability(
 
             lower_error = error_text.lower()
 
+            # ------------------------------------------------
+            # INVALID CAPTCHA
+            # ------------------------------------------------
+
             if "captcha" in lower_error:
 
                 raise HTTPException(
                     status_code=400,
-                    detail=error_text,
+                    detail=(
+                        "Invalid captcha, please try again."
+                    ),
                 )
+
+            # ------------------------------------------------
+            # SESSION EXPIRED
+            # ------------------------------------------------
 
             if (
                 "session" in lower_error
@@ -1744,9 +1890,16 @@ async def get_train_availability(
                     ),
                 )
 
+            # ------------------------------------------------
+            # OTHER IRCTC AVAILABILITY ERROR
+            # ------------------------------------------------
+
             raise HTTPException(
                 status_code=502,
-                detail=error_text,
+                detail=(
+                    "Unable to fetch train availability "
+                    "right now. Please try again."
+                ),
             )
 
         # ----------------------------------------------------
