@@ -20,6 +20,8 @@ from app.routers.trains import (
     update_last_used,
 )
 
+from app.services.redis_cache import (cache_get, cache_set,cache_delete,)
+    
 
 router = APIRouter(
     prefix="/api/trains/alternate",
@@ -47,6 +49,11 @@ JOB_TTL_SECONDS = 30 * 60
 # belonging to the same IRCTC session are serialized.
 REQUEST_DELAY_SECONDS = 0.10
 
+
+
+# Completed alternate availability results stay in Redis
+# for 10 minutes.
+ALTERNATE_REDIS_CACHE_TTL_SECONDS = 10 * 60
 
 # ---------------------------------------------------------------------------
 # Request / Job models
@@ -94,6 +101,10 @@ class AlternateAvailabilityRequest(BaseModel):
         max_length=100,
     )
 
+    # If true, bypass the completed Redis cache
+    # and start a fresh alternate availability search.
+    force_refresh: bool = False
+
 
 @dataclass
 class AlternateJob:
@@ -136,6 +147,73 @@ alternate_jobs_lock = asyncio.Lock()
 
 def _normalize_code(value: str) -> str:
     return str(value or "").strip().upper()
+
+
+def _build_alternate_redis_cache_key(
+    request: AlternateAvailabilityRequest,
+) -> str:
+
+    return ":".join(
+        [
+            "alternate",
+            request.train_number.strip(),
+            _normalize_code(request.from_code),
+            _normalize_code(request.to_code),
+            request.journey_date.strip(),
+            normalize_travel_class(
+                request.travel_class
+            ) or "",
+            normalize_quota(
+                request.quota
+            ),
+            (
+                request.train_type.strip().upper()
+                if request.train_type
+                else ""
+            ),
+        ]
+    )
+
+
+async def _find_running_alternate_job(
+    redis_cache_key: str,
+) -> Optional[str]:
+
+    running_key = (
+        f"{redis_cache_key}:running"
+    )
+
+    running_job_id = await cache_get(
+        running_key
+    )
+
+    if not isinstance(
+        running_job_id,
+        str,
+    ):
+        return None
+
+    job = alternate_jobs.get(
+        running_job_id
+    )
+
+    if job is None:
+        # Stale Redis running-job reference.
+        await cache_set(
+            running_key,
+            "",
+            ttl_seconds=1,
+        )
+        return None
+
+    if job.status in {
+        "completed",
+        "failed",
+        "cancelled",
+    }:
+        return None
+
+    return running_job_id
 
 
 def _to_ntes_date(value: str) -> str:
@@ -882,6 +960,66 @@ async def _run_alternate_job(
 
         job.status = "completed"
 
+        await cache_delete(
+            f"{_build_alternate_redis_cache_key(request)}:running"
+        )
+
+
+        # ----------------------------------------------------
+        # Save completed alternate result in Redis
+        # ----------------------------------------------------
+
+        redis_cache_key = (
+            _build_alternate_redis_cache_key(
+                request
+            )
+        )
+
+        alternate_results = []
+
+        for event in job.events:
+
+            if event.get("event") != "alternative_found":
+                continue
+
+            event_data = event.get(
+                "data",
+                {}
+            )
+
+            alternative = event_data.get(
+                "result"
+            )
+
+            if isinstance(
+                alternative,
+                dict,
+            ):
+                alternate_results.append(
+                    alternative
+                )
+
+        fetched_at = (
+            datetime.now().astimezone().isoformat()
+        )
+
+        await cache_set(
+            redis_cache_key,
+            {
+                "results": alternate_results,
+                "checked": job.checked,
+                "total": job.total,
+                "found": job.found,
+                "errors": job.errors,
+                "fetched_at": fetched_at,
+            },
+            ttl_seconds=(
+                ALTERNATE_REDIS_CACHE_TTL_SECONDS
+            ),
+        )
+
+
+
         await _publish_event(
             job,
             "completed",
@@ -898,6 +1036,11 @@ async def _run_alternate_job(
     except asyncio.CancelledError:
 
         job.status = "cancelled"
+
+
+        await cache_delete(f"{_build_alternate_redis_cache_key(request)}:running")
+            
+        
 
         await _publish_event(
             job,
@@ -916,6 +1059,9 @@ async def _run_alternate_job(
     except Exception as exc:
 
         job.status = "failed"
+
+
+        await cache_delete(f"{_build_alternate_redis_cache_key(request)}:running")
 
         # Keep the technical exception only in server logs.
         print(
@@ -1021,6 +1167,113 @@ async def start_alternate_availability(
         request.quota
     )
 
+
+    # ---------------------------------------------------------
+    # Check completed alternate result in Redis
+    # ---------------------------------------------------------
+
+    redis_cache_key = (
+        _build_alternate_redis_cache_key(
+            request
+        )
+    )
+
+    if not request.force_refresh:
+
+        cached_result = await cache_get(
+            redis_cache_key
+        )
+
+        if isinstance(
+            cached_result,
+            dict,
+        ):
+
+            return {
+                "success": True,
+                "cached": True,
+                "job_id": None,
+                "status": "completed",
+                "train_number": request.train_number,
+                "journey_date": request.journey_date,
+                "travel_class": class_code,
+                "quota": quota,
+                "results": cached_result.get(
+                    "results",
+                    [],
+                ),
+                "checked": cached_result.get(
+                    "checked",
+                    0,
+                ),
+                "total": cached_result.get(
+                    "total",
+                    0,
+                ),
+                "found": cached_result.get(
+                    "found",
+                    0,
+                ),
+                "errors": cached_result.get(
+                    "errors",
+                    0,
+                ),
+                "fetched_at": cached_result.get(
+                    "fetched_at"
+                ),
+            }
+
+
+
+    # ---------------------------------------------------------
+    # Check whether the same alternate search is
+    # already running.
+    # ---------------------------------------------------------
+
+    redis_cache_key = (
+        _build_alternate_redis_cache_key(
+            request
+        )
+    )
+
+    if not request.force_refresh:
+
+        running_job_id = (
+            await _find_running_alternate_job(
+                redis_cache_key
+            )
+        )
+
+        if running_job_id:
+
+            running_job = alternate_jobs.get(
+                running_job_id
+            )
+
+            return {
+                "success": True,
+                "cached": False,
+                "shared": True,
+                "job_id": running_job_id,
+                "status": (
+                    running_job.status
+                    if running_job
+                    else "running"
+                ),
+                "train_number": request.train_number,
+                "journey_date": request.journey_date,
+                "travel_class": class_code,
+                "quota": quota,
+                "stream_url": (
+                    f"/api/trains/alternate/stream/"
+                    f"{running_job_id}"
+                ),
+                "status_url": (
+                    f"/api/trains/alternate/status/"
+                    f"{running_job_id}"
+                ),
+            }
+
     # ---------------------------------------------------------
     # Fetch live route from NTES route service.
     # ---------------------------------------------------------
@@ -1058,9 +1311,21 @@ async def start_alternate_availability(
 
     job_id = uuid.uuid4().hex
 
+
+    running_redis_key = (
+        f"{redis_cache_key}:running"
+    )
+    await cache_set(
+        running_redis_key,
+        job_id,
+        ttl_seconds=30 * 60,
+    )
+
     job = AlternateJob(
         job_id=job_id,
     )
+
+
 
     job.total = len(station_pairs)
 

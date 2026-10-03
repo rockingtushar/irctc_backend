@@ -14,6 +14,9 @@ from sqlalchemy import select
 from dataclasses import dataclass, field
 from app.database import AsyncSessionLocal
 from app.models import Station
+from app.services.redis_cache import (cache_get, cache_set,)
+    
+    
 
 
 router = APIRouter(
@@ -81,6 +84,11 @@ cleanup_task: Optional[asyncio.Task] = None
 
 AVAILABILITY_CACHE_TTL_SECONDS = 120
 
+
+REDIS_AVAILABILITY_CACHE_TTL_SECONDS = 5 * 60
+
+
+
 @dataclass
 class AvailabilityCacheEntry:
     data: dict[str, Any]
@@ -93,6 +101,7 @@ availability_cache: dict[
 ] = {}
 
 availability_cache_lock = asyncio.Lock()
+
 
 
 # ============================================================
@@ -119,6 +128,9 @@ class TrainSearchRequest(BaseModel):
     travel_class: str = "All Classes"
     quota: str = "General (GN)"
 
+    # Redis cache refresh
+    force_refresh: bool = False
+
 
 class TrainAvailabilityRequest(BaseModel):
     session_id: str
@@ -134,6 +146,29 @@ class TrainAvailabilityRequest(BaseModel):
     quota: str = "GN"
 
     train_type: Optional[str] = None
+
+    force_refresh: bool = False
+
+
+# ============================================================
+# REDIS TRAIN SEARCH CACHE
+# ============================================================
+
+TRAIN_SEARCH_CACHE_TTL_SECONDS = 15 * 60
+
+
+def build_train_search_cache_key(
+    request: TrainSearchRequest,
+) -> str:
+
+    return ":".join(
+        [
+            "train_search",
+            request.from_code.strip().upper(),
+            request.to_code.strip().upper(),
+            request.journey_date.strip(),
+        ]
+    )
 
 
 # ============================================================
@@ -1320,6 +1355,53 @@ async def search_trains(
             detail="Captcha answer required.",
         )
 
+    
+
+    # --------------------------------------------------------
+    # 3A. Redis train-search cache
+    # --------------------------------------------------------
+
+    train_search_cache_key = (
+        build_train_search_cache_key(
+            request
+        )
+    )
+
+    if (
+        session.captcha_verified
+        and not request.force_refresh
+    ):
+
+        cached_search = await cache_get(
+            train_search_cache_key
+        )
+
+        if isinstance(
+            cached_search,
+            dict,
+        ):
+
+            cached_trains = cached_search.get(
+                "trains"
+            )
+
+            cached_fetched_at = (
+                cached_search.get(
+                    "fetched_at"
+                )
+            )
+
+            if isinstance(
+                cached_trains,
+                list,
+            ):
+
+                return {
+                    "trains": cached_trains,
+                    "cached": True,
+                    "fetched_at": cached_fetched_at,
+                }
+
     # --------------------------------------------------------
     # 4. Date
     # --------------------------------------------------------
@@ -1523,8 +1605,27 @@ async def search_trains(
             ),
         )
 
+    # --------------------------------------------------------
+    # 12. Save successful train search in Redis
+    # --------------------------------------------------------
+
+    fetched_at = datetime.utcnow().isoformat() + "Z"
+
+    cache_payload = {
+        "trains": cleaned_trains,
+        "fetched_at": fetched_at,
+    }
+
+    await cache_set(
+        train_search_cache_key,
+        cache_payload,
+        ttl_seconds=TRAIN_SEARCH_CACHE_TTL_SECONDS,
+    )
+
     return {
         "trains": cleaned_trains,
+        "cached": False,
+        "fetched_at": fetched_at,
     }
 
 # ============================================================
@@ -1537,6 +1638,28 @@ def build_availability_cache_key(
 
     return "|".join(
         [
+            request.train_number.strip(),
+            request.from_code.strip().upper(),
+            request.to_code.strip().upper(),
+            request.journey_date.strip(),
+            request.travel_class.strip().upper(),
+            request.quota.strip().upper(),
+            (
+                request.train_type.strip().upper()
+                if request.train_type
+                else ""
+            ),
+        ]
+    )
+
+
+def build_redis_availability_cache_key(
+    request: TrainAvailabilityRequest,
+) -> str:
+
+    return ":".join(
+        [
+            "availability",
             request.train_number.strip(),
             request.from_code.strip().upper(),
             request.to_code.strip().upper(),
@@ -1679,50 +1802,43 @@ async def get_train_availability(
         request
     )
 
+
+    # --------------------------------------------------------
+    # 6A. Build Redis cache key
+    # --------------------------------------------------------
+
+    redis_cache_key = (
+        build_redis_availability_cache_key(
+            request
+        )
+    )
+
+
+    # --------------------------------------------------------
+    # 6B. Check Redis cache
+    # --------------------------------------------------------
+
+    if not request.force_refresh:
+
+        redis_cached = await cache_get(
+            redis_cache_key
+        )
+
+        if isinstance(
+            redis_cached,
+            dict,
+        ):
+
+            return {
+                **redis_cached,
+                "cached": True,
+            }
+
     # --------------------------------------------------------
     # 7. Return fresh cached result if available
     # --------------------------------------------------------
 
-    now_monotonic = time.monotonic()
-
-    async with availability_cache_lock:
-
-        cached = availability_cache.get(
-            cache_key
-        )
-
-        if (
-            cached is not None
-            and (
-                now_monotonic
-                - cached.fetched_at
-                < AVAILABILITY_CACHE_TTL_SECONDS
-            )
-        ):
-
-            await update_last_used(
-                request.session_id
-            )
-
-            return cached.data
-
-    # --------------------------------------------------------
-    # 8. IMPORTANT:
-    #
-    # Serialize availability calls belonging to this
-    # Indian Railways HTTP session.
-    #
-    # No Promise.all / parallel upstream calls.
-    # --------------------------------------------------------
-
-    async with session.availability_lock:
-
-        # ----------------------------------------------------
-        # Check cache AGAIN after acquiring lock.
-        #
-        # Another request may have populated it while this
-        # request was waiting for the lock.
-        # ----------------------------------------------------
+    if not request.force_refresh:
 
         now_monotonic = time.monotonic()
 
@@ -1745,7 +1861,56 @@ async def get_train_availability(
                     request.session_id
                 )
 
-                return cached.data
+                return {
+                    **cached.data,
+                    "cached": True,
+                }
+
+    # --------------------------------------------------------
+    # 8. IMPORTANT:
+    #
+    # Serialize availability calls belonging to this
+    # Indian Railways HTTP session.
+    #
+    # No Promise.all / parallel upstream calls.
+    # --------------------------------------------------------
+
+    async with session.availability_lock:
+
+        # ----------------------------------------------------
+        # Check cache AGAIN after acquiring lock.
+        #
+        # Another request may have populated it while this
+        # request was waiting for the lock.
+        # ----------------------------------------------------
+
+        if not request.force_refresh:
+
+            now_monotonic = time.monotonic()
+
+            async with availability_cache_lock:
+
+                cached = availability_cache.get(
+                    cache_key
+                )
+
+                if (
+                    cached is not None
+                    and (
+                        now_monotonic
+                        - cached.fetched_at
+                        < AVAILABILITY_CACHE_TTL_SECONDS
+                    )
+                ):
+
+                    await update_last_used(
+                        request.session_id
+                    )
+
+                    return {
+                        **cached.data,
+                        "cached": True,
+                    }
 
         # ----------------------------------------------------
         # 9. Build Indian Railways CommonCaptcha request
@@ -2029,6 +2194,17 @@ async def get_train_availability(
                 )
             )
 
+
+        # ----------------------------------------------------
+        # 17A. Save result in Redis
+        # ----------------------------------------------------
+
+        await cache_set(
+            redis_cache_key,
+            result,
+            ttl_seconds=REDIS_AVAILABILITY_CACHE_TTL_SECONDS,
+        )
+
         # ----------------------------------------------------
         # 18. Update session activity
         # ----------------------------------------------------
@@ -2047,4 +2223,7 @@ async def get_train_availability(
                 ),
             )
 
-        return result
+        return { **result, "cached": False,}
+        
+        
+    
