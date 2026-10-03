@@ -53,7 +53,7 @@ REQUEST_DELAY_SECONDS = 0.10
 
 # Completed alternate availability results stay in Redis
 # for 10 minutes.
-ALTERNATE_REDIS_CACHE_TTL_SECONDS = 10 * 60
+ALTERNATE_REDIS_CACHE_TTL_SECONDS = 6 * 60 * 60
 
 # ---------------------------------------------------------------------------
 # Request / Job models
